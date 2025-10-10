@@ -354,6 +354,7 @@ if uploaded_file:
     # --- [6] 전체 요약 ---
     st.markdown("---")
     st.markdown("## 📝 이번달 주간 요약")
+    
     # 요약 테이블 생성
     summary_data = []
     for label, key in weeks.items():
@@ -369,11 +370,13 @@ if uploaded_file:
     st.dataframe(summary_df, use_container_width=True)
 
     st.markdown("## 🔎 최대선 커버리지 피드백")
+
+    # --- 요기부터: "이번달 주간 요약(summary_df)" 바로 밑에 붙이기 ---
     
-    month_goals = build_month_goals(filtered)  # 이미 위에서 filtered = 해당 월 df
+    month_goals = build_month_goals(filtered)  # 위에서 만든 filtered(선택 월 df) 사용
     cov_res = compute_coverage(weeks, st.session_state.weekly_plan, month_goals)
     
-    # 2-1) 용량 진단
+    # 1) 용량 진단
     if not cov_res["capacity_ok"]:
         st.error(
             f"최대선 개수({cov_res['num_max_goals']})가 이번달 포커스 슬롯 수({cov_res['total_focus_slots']})보다 많아요. "
@@ -384,7 +387,7 @@ if uploaded_file:
             f"포커스 슬롯 충분 ✅ (최대선 {cov_res['num_max_goals']}개 / 사용 가능 슬롯 {cov_res['total_focus_slots']}개)"
         )
     
-    # 2-2) 커버리지 표
+    # 2) 커버리지 표
     rows = []
     for gid, g in month_goals.items():
         cv = cov_res["coverage"][gid]
@@ -399,54 +402,155 @@ if uploaded_file:
     cov_df = pd.DataFrame(rows).sort_values(["구분","상태","목표"])
     st.dataframe(cov_df, use_container_width=True)
     
-    # 2-3) 누락 경고
+    # 3) 누락 경고
     missing_max_labels = [month_goals[gid]["label"] for gid in cov_res["missing_focus"]]
     if missing_max_labels:
         st.warning("🚨 포커스로 배정되지 않은 ‘최대선’이 있습니다:\n- " + "\n- ".join(missing_max_labels))
     else:
         st.info("모든 ‘최대선’이 최소 1회 이상 포커스로 배정되었습니다. 👍")
     
-    # 2-4) 자동 배치/승격 제안
-    def _apply_suggestions(suggestions, swaps):
-        # 제안 반영: 빈 주엔 포커스로 추가, 과밀 주엔 routine→focus 승격
+    # ========= 새로 추가: "제안 미리보기" DF + 다운로드 =========
+    def _normalize_text(s: str) -> str:
+        import unicodedata, re
+        s = unicodedata.normalize("NFKC", str(s)).strip()
+        s = re.sub(r"\s+", " ", s)
+        return s
+    
+    def _snapshot_weekly_plan(plan_dict):
+        """깊은 복사 스냅샷 (focus/routine만)"""
+        snap = {}
+        for wk, v in plan_dict.items():
+            snap[wk] = {
+                "focus": list(v.get("focus", [])),
+                "routine": list(v.get("routine", [])),
+            }
+        return snap
+    
+    def _apply_suggestions(suggestions, swaps, weekly_plan, month_goals):
+        """제안 반영: 빈 주엔 추가, 과밀 주는 routine→focus 승격(2개 제한 유지)"""
+        applied = []
+        # 빈 주 포커스 슬롯에 추가
         for wk, gid in suggestions:
             label = month_goals[gid]["label"]
-            plan = st.session_state.weekly_plan.get(wk, {"focus": [], "routine": []})
+            plan = weekly_plan.get(wk, {"focus": [], "routine": []})
             if label not in plan["focus"] and len(plan["focus"]) < 2:
                 plan["focus"].append(label)
-            st.session_state.weekly_plan[wk] = plan
-    
+                applied.append(("add", wk, label, "빈 슬롯에 최대선 배치"))
+            weekly_plan[wk] = plan
+        # 과밀 주 승격
         for wk, gid in swaps:
             label = month_goals[gid]["label"]
-            plan = st.session_state.weekly_plan.get(wk, {"focus": [], "routine": []})
-            # routine에서 제거 후 focus로 승격(중복 방지)
+            plan = weekly_plan.get(wk, {"focus": [], "routine": []})
+            # routine에서 제거 후 focus로 승격
+            before_len = len(plan["focus"])
             plan["routine"] = [x for x in plan.get("routine", []) if _normalize_text(x) != gid]
             if label not in plan["focus"]:
-                # 포커스가 꽉 차있어도 승격을 우선으로 넣고, 3개가 되면 제일 덜 중요한 항목 제거 등
-                # 하지만 UI 일관성을 위해 2개 유지: 넘치면 마지막 항목 하나 제거
                 plan["focus"].append(label)
+                # 2개 제한 유지: 넘치면 가장 최근 것 기준으로 2개만 남김
                 if len(plan["focus"]) > 2:
+                    # 정책: 가장 마지막 2개만 유지(원하면 커스텀)
+                    dropped = plan["focus"][:-2]
                     plan["focus"] = plan["focus"][-2:]
-            st.session_state.weekly_plan[wk] = plan
+                    # 드롭된 항목 기록
+                    for dlab in dropped:
+                        applied.append(("drop", wk, dlab, "과밀 조정(2개 제한)"))
+                applied.append(("promote", wk, label, "routine→focus 승격"))
+            weekly_plan[wk] = plan
+        return applied
     
-    # 제안 리스트 보여주기
-    if cov_res["suggestions"] or cov_res["swaps"]:
-        st.markdown("#### 🪄 자동 배치/승격 제안")
-        if cov_res["suggestions"]:
-            st.write("빈 주의 포커스 슬롯에 최대선 배치:")
-            for wk, gid in cov_res["suggestions"]:
-                st.write(f"- `{wk}` 에 **{month_goals[gid]['label']}** 추가")
-        if cov_res["swaps"]:
-            st.write("과밀 주에서 routine→focus 승격 제안:")
-            for wk, gid in cov_res["swaps"]:
-                st.write(f"- `{wk}` 에서 **{month_goals[gid]['label']}** 승격")
+    # --- 제안 미리보기 DF ---
+    preview_rows = []
+    for wk, gid in cov_res["suggestions"]:
+        preview_rows.append({
+            "주차": wk,
+            "조치": "add",
+            "대상": month_goals[gid]["label"],
+            "설명": "빈 슬롯에 최대선 배치"
+        })
+    for wk, gid in cov_res["swaps"]:
+        preview_rows.append({
+            "주차": wk,
+            "조치": "promote",
+            "대상": month_goals[gid]["label"],
+            "설명": "과밀 주 routine→focus 승격"
+        })
     
-        if st.button("✅ 제안 자동 반영"):
-            _apply_suggestions(cov_res["suggestions"], cov_res["swaps"])
-            st.success("제안을 주간 계획에 반영했어요.")
-            st.rerun()
+    st.markdown("#### 👀 제안 미리보기")
+    if preview_rows:
+        suggest_df = pd.DataFrame(preview_rows)
+        st.dataframe(suggest_df, use_container_width=True)
+        csv_preview = suggest_df.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "📥 제안 미리보기 CSV 다운로드",
+            data=csv_preview,
+            file_name="suggestions_preview.csv",
+            mime="text/csv",
+            key="dl_suggest_preview"
+        )
     else:
-        st.caption("자동 배치/승격 제안 필요 없음.")
+        st.caption("현재 자동 배치/승격 제안이 없습니다.")
+    
+    # ========= 새로 추가: "자동 반영" 후 diff 결과표 + 다운로드 =========
+    st.markdown("#### ✅ 제안 자동 반영")
+    
+    if st.button("제안 자동 반영 실행"):
+        # 1) 반영 전 스냅샷
+        before = _snapshot_weekly_plan(st.session_state.weekly_plan)
+    
+        # 2) 반영 실행
+        applied_log = _apply_suggestions(
+            cov_res["suggestions"], cov_res["swaps"],
+            st.session_state.weekly_plan, month_goals
+        )
+    
+        # 3) 반영 후 스냅샷
+        after = _snapshot_weekly_plan(st.session_state.weekly_plan)
+    
+        # 4) 주차별 diff 계산
+        diff_rows = []
+        for wk in weeks.values():
+            b_focus = set(before.get(wk, {}).get("focus", []))
+            a_focus = set(after.get(wk, {}).get("focus", []))
+            added = sorted(list(a_focus - b_focus))
+            removed = sorted(list(b_focus - a_focus))
+            diff_rows.append({
+                "주차": wk,
+                "추가된 포커스": " | ".join(added) if added else "-",
+                "제거된 포커스": " | ".join(removed) if removed else "-",
+                "반영 후 포커스": " | ".join(after.get(wk, {}).get("focus", [])) if after.get(wk) else "-"
+            })
+    
+        diff_df = pd.DataFrame(diff_rows)
+    
+        st.success("제안을 주간 계획에 반영했어요. 아래 ‘반영 결과’에서 변경 내역을 확인하세요.")
+        st.markdown("##### 🔁 반영 결과 (주차별 변경 내역)")
+        st.dataframe(diff_df, use_container_width=True)
+    
+        csv_diff = diff_df.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "📥 반영 결과(diff) CSV 다운로드",
+            data=csv_diff,
+            file_name="weekly_plan_diff.csv",
+            mime="text/csv",
+            key="dl_diff"
+        )
+    
+        # 5) 어떤 조치가 실행되었는지 로그도 표로 제공
+        if applied_log:
+            log_df = pd.DataFrame(applied_log, columns=["action","week_key","label","note"])
+            st.markdown("##### 🧾 적용된 세부 조치 로그")
+            st.dataframe(log_df, use_container_width=True)
+            csv_log = log_df.to_csv(index=False).encode("utf-8-sig")
+            st.download_button(
+                "📥 적용 로그 CSV 다운로드",
+                data=csv_log,
+                file_name="applied_actions_log.csv",
+                mime="text/csv",
+                key="dl_log"
+            )
+        else:
+            st.caption("실행된 조치가 없습니다.")
+
 
 
 

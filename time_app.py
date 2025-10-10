@@ -8,8 +8,125 @@ import json
 from pathlib import Path
 import streamlit as st
 
-STATE_FILE = Path("state_storage.json")
+STATE_FILE = Path("state_storage.json")ㄹ
 STATE_KEYS = ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]
+
+import unicodedata
+from collections import defaultdict
+
+def _normalize_text(s: str) -> str:
+    # 공백/기호/대소문자 차이로 매칭 실패하지 않게 정규화
+    s = unicodedata.normalize("NFKC", str(s)).strip()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+def build_month_goals(df):
+    """
+    df의 '최대선','최소선'에서 [소주제] • 항목을 파싱해
+    goal_id -> {label, kind('max'|'min'), section, item} 사전 생성
+    """
+    goals = {}
+    seen = set()
+
+    blocks = []
+    if "최대선" in df.columns:
+        blocks += [("max", x) for x in df["최대선"].dropna().tolist()]
+    if "최소선" in df.columns:
+        blocks += [("min", x) for x in df["최소선"].dropna().tolist()]
+
+    for kind, text in blocks:
+        parsed = parse_goals(str(text))
+        for section, item in parsed:
+            label = f"{section} - {item}"
+            key = _normalize_text(label)
+            if key in seen:  # 중복 제거
+                continue
+            seen.add(key)
+            goals[key] = {
+                "label": label,
+                "kind": kind,          # 'max' or 'min'
+                "section": section,
+                "item": item,
+            }
+    return goals  # key는 정규화 label
+
+def compute_coverage(weeks, weekly_plan, month_goals):
+    """
+    주차별 선택(weekly_plan) 대비 월 목표 커버리지/누락/과밀을 계산
+    - focus는 가중치 2, routine은 가중치 1(필요시 조정)
+    """
+    # 주당 focus 최대 2개 (이미 UI에서 max_selections=2)
+    week_capacity = {wk: 2 for wk in weeks.values()}
+
+    # 목표별 커버 카운트
+    cov = {gid: {"focus": 0, "routine": 0, "weeks": []} for gid in month_goals.keys()}
+
+    # 주차별 현재 focus 개수
+    week_focus_count = defaultdict(int)
+
+    # 매칭
+    for wk in weeks.values():
+        sel = weekly_plan.get(wk, {"focus": [], "routine": []})
+        for bucket, name in [("focus", "focus"), ("routine", "routine")]:
+            for raw in sel.get(name, []):
+                gid = _normalize_text(raw)
+                if gid in cov:
+                    cov[gid][bucket] += 1
+                    if wk not in cov[gid]["weeks"]:
+                        cov[gid]["weeks"].append(wk)
+        week_focus_count[wk] = len(sel.get("focus", []))
+
+    # 최대선 필수 조건(기본 규칙):
+    #   - 각 '최대선'은 적어도 1번은 focus로 등장해야 함
+    #   - 현실성 체크: 총 focus 슬롯 >= 최대선 개수인지 사전 진단
+    num_weeks = len(weeks)
+    total_focus_slots = num_weeks * 2
+    max_goals = [gid for gid, g in month_goals.items() if g["kind"] == "max"]
+    capacity_ok = total_focus_slots >= len(max_goals)
+
+    missing_focus = [gid for gid in max_goals if cov[gid]["focus"] == 0]
+    covered_focus = [gid for gid in max_goals if cov[gid]["focus"] >= 1]
+
+    # 배치 가능한 주(여유 슬롯이 있는 주)를 찾고, 누락된 최대선을 우선 배치 제안
+    free_weeks = [wk for wk, c in week_focus_count.items() if c < 2]
+
+    suggestions = []  # [(week_key, goal_id)]
+    gi = 0
+    for wk in free_weeks:
+        if gi >= len(missing_focus):
+            break
+        suggestions.append((wk, missing_focus[gi]))
+        gi += 1
+
+    # 남은 누락 목표가 있다면: 과밀 주에서 교체 제안(루틴 → 포커스로 승격)
+    swaps = []  # [(from_week, goal_id)]  # 과밀 주의 routine을 포커스로 승격 제안
+    if gi < len(missing_focus):
+        # 과밀 주들
+        crowded = [wk for wk, c in week_focus_count.items() if c >= 2]
+        for wk in crowded:
+            # 그 주의 routine 중에서 동일 goal이 있다면 승격 추천
+            rts = weekly_plan.get(wk, {}).get("routine", [])
+            r_norm = set(_normalize_text(x) for x in rts)
+            for gid in missing_focus[gi:]:
+                if gid in r_norm:
+                    swaps.append((wk, gid))
+                    gi += 1
+                    if gi >= len(missing_focus):
+                        break
+            if gi >= len(missing_focus):
+                break
+
+    return {
+        "capacity_ok": capacity_ok,
+        "total_focus_slots": total_focus_slots,
+        "num_max_goals": len(max_goals),
+        "coverage": cov,
+        "missing_focus": missing_focus,
+        "covered_focus": covered_focus,
+        "suggestions": suggestions,
+        "swaps": swaps,
+    }
+
 
 def _serialize_state(s):
     """st.session_state → JSON 직렬화 가능한 dict로 변환"""
@@ -250,6 +367,87 @@ if uploaded_file:
     
     summary_df = pd.DataFrame(summary_data)
     st.dataframe(summary_df, use_container_width=True)
+
+    st.markdown("## 🔎 최대선 커버리지 피드백")
+    
+    month_goals = build_month_goals(filtered)  # 이미 위에서 filtered = 해당 월 df
+    cov_res = compute_coverage(weeks, st.session_state.weekly_plan, month_goals)
+    
+    # 2-1) 용량 진단
+    if not cov_res["capacity_ok"]:
+        st.error(
+            f"최대선 개수({cov_res['num_max_goals']})가 이번달 포커스 슬롯 수({cov_res['total_focus_slots']})보다 많아요. "
+            "일부 최대선을 다음 달로 미루거나, 우선순위를 조정하세요."
+        )
+    else:
+        st.success(
+            f"포커스 슬롯 충분 ✅ (최대선 {cov_res['num_max_goals']}개 / 사용 가능 슬롯 {cov_res['total_focus_slots']}개)"
+        )
+    
+    # 2-2) 커버리지 표
+    rows = []
+    for gid, g in month_goals.items():
+        cv = cov_res["coverage"][gid]
+        rows.append({
+            "구분": "최대선" if g["kind"]=="max" else "최소선",
+            "목표": g["label"],
+            "포커스 횟수": cv["focus"],
+            "루틴 횟수": cv["routine"],
+            "배치 주": ", ".join(cv["weeks"]) if cv["weeks"] else "-",
+            "상태": ("누락(포커스 미배정)" if (g["kind"]=="max" and cv["focus"]==0) else "OK")
+        })
+    cov_df = pd.DataFrame(rows).sort_values(["구분","상태","목표"])
+    st.dataframe(cov_df, use_container_width=True)
+    
+    # 2-3) 누락 경고
+    missing_max_labels = [month_goals[gid]["label"] for gid in cov_res["missing_focus"]]
+    if missing_max_labels:
+        st.warning("🚨 포커스로 배정되지 않은 ‘최대선’이 있습니다:\n- " + "\n- ".join(missing_max_labels))
+    else:
+        st.info("모든 ‘최대선’이 최소 1회 이상 포커스로 배정되었습니다. 👍")
+    
+    # 2-4) 자동 배치/승격 제안
+    def _apply_suggestions(suggestions, swaps):
+        # 제안 반영: 빈 주엔 포커스로 추가, 과밀 주엔 routine→focus 승격
+        for wk, gid in suggestions:
+            label = month_goals[gid]["label"]
+            plan = st.session_state.weekly_plan.get(wk, {"focus": [], "routine": []})
+            if label not in plan["focus"] and len(plan["focus"]) < 2:
+                plan["focus"].append(label)
+            st.session_state.weekly_plan[wk] = plan
+    
+        for wk, gid in swaps:
+            label = month_goals[gid]["label"]
+            plan = st.session_state.weekly_plan.get(wk, {"focus": [], "routine": []})
+            # routine에서 제거 후 focus로 승격(중복 방지)
+            plan["routine"] = [x for x in plan.get("routine", []) if _normalize_text(x) != gid]
+            if label not in plan["focus"]:
+                # 포커스가 꽉 차있어도 승격을 우선으로 넣고, 3개가 되면 제일 덜 중요한 항목 제거 등
+                # 하지만 UI 일관성을 위해 2개 유지: 넘치면 마지막 항목 하나 제거
+                plan["focus"].append(label)
+                if len(plan["focus"]) > 2:
+                    plan["focus"] = plan["focus"][-2:]
+            st.session_state.weekly_plan[wk] = plan
+    
+    # 제안 리스트 보여주기
+    if cov_res["suggestions"] or cov_res["swaps"]:
+        st.markdown("#### 🪄 자동 배치/승격 제안")
+        if cov_res["suggestions"]:
+            st.write("빈 주의 포커스 슬롯에 최대선 배치:")
+            for wk, gid in cov_res["suggestions"]:
+                st.write(f"- `{wk}` 에 **{month_goals[gid]['label']}** 추가")
+        if cov_res["swaps"]:
+            st.write("과밀 주에서 routine→focus 승격 제안:")
+            for wk, gid in cov_res["swaps"]:
+                st.write(f"- `{wk}` 에서 **{month_goals[gid]['label']}** 승격")
+    
+        if st.button("✅ 제안 자동 반영"):
+            _apply_suggestions(cov_res["suggestions"], cov_res["swaps"])
+            st.success("제안을 주간 계획에 반영했어요.")
+            st.rerun()
+    else:
+        st.caption("자동 배치/승격 제안 필요 없음.")
+
 
 
 #--------테스트    

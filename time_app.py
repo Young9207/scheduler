@@ -807,7 +807,7 @@ if uploaded_file:
                 if auto_main:
                     st.write("- " + " | ".join(auto_main))
                 if auto_routine:
-                    st.write("- : " + " | ".join(auto_routine))
+                    st.write("- " + " | ".join(auto_routine))
     
             # ✏️ 상세 플랜(메인/배경) 두 칸
             st.caption("✏️ 오늘 상세 플랜")

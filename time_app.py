@@ -83,6 +83,12 @@ def generate_calendar_weeks(year: int, month: int):
 month_map = {"1월": 1, "2월": 2, "3월": 3, "4월": 4, "5월": 5, "6월": 6,
               "7월": 7, "8월": 8, "9월": 9, "10월": 10, "11월": 11, "12월": 12}
 
+# --- 현재 날짜 및 주차 판별 ---
+today_date = datetime.date.today()
+today_name = today_date.strftime("%A")  
+
+
+
 st.set_page_config(page_title="Time Focus Flow", layout="wide")
 
 st.title("🧠 주간 시간관리 웹앱")

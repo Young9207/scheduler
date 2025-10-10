@@ -206,9 +206,9 @@ if uploaded_file:
         end = datetime.date(year, em, ed)
         days = [start + datetime.timedelta(days=i) for i in range((end - start).days + 1)]
         # 길이가 7이 아닐 수 있어도 표시 맞춤
-        while len(days) < 7:
+        while len(days) < 6:
             days.append(days[-1] + datetime.timedelta(days=1))
-        return days[:7]
+        return days[:6]
     
     week_dates = parse_week_dates(selected_week_label)
     

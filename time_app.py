@@ -188,86 +188,232 @@ if uploaded_file:
     
     # --- 오늘의 실행 블록 ---
     # ---테스트1---
-    # 요일 정의 (월~일)
-    DAYS_KR = ["월", "화", "수", "목", "금", "토", "일"]
-    UNIT_TEMPLATES = ["Step 1: 리서치/구조", "Step 2: 제작/초안", "Step 3: 정리/공유"]
+    # # 요일 정의 (월~일)
+    # DAYS_KR = ["월", "화", "수", "목", "금", "토", "일"]
+    # UNIT_TEMPLATES = ["Step 1: 리서치/구조", "Step 2: 제작/초안", "Step 3: 정리/공유"]
     
-    # --- 주차 선택(해당 주만 보이기) ---
+    # # --- 주차 선택(해당 주만 보이기) ---
+    # selected_week_label = st.selectbox("📆 볼 주차를 선택하세요", list(weeks.keys()))
+    # selected_week_key = weeks[selected_week_label]
+    
+    # st.markdown(f"### 🗓 {selected_week_label} — 요일별 블록 (월-일 가로 배치)")
+    
+    # # --- 선택된 주의 메인 1~2개 가져오기 ---
+    # plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
+    # mains = plan.get("focus", [])[:2]
+    # routines = plan.get("routine", [])
+    
+    # # 메인이 없으면 안내 후 종료
+    # if not mains:
+    #     st.info("이 주차에 선택된 메인이 없습니다. 먼저 메인 1~2개를 선택해주세요.")
+    # else:
+    #     # --- 메인을 3단계 데일리 블록으로 분해 ---
+    #     def build_flow(title: str):
+    #         return [f"{title} - {u}" for u in UNIT_TEMPLATES]
+    
+    #     flows = [build_flow(m) for m in mains]  # [[A1,A2,A3], [B1,B2,B3]]
+    #     # 교차 순서: A1, B1, A2, B2, A3, B3
+    #     queue = []
+    #     for i in range(3):
+    #         for f in flows:
+    #             if i < len(f):
+    #                 queue.append(f[i])
+    
+    #     # --- 요일별 블록 자동 배치 (월~토 6칸 → 남는 일요일은 루틴/버퍼로) ---
+    #     day_blocks = {d: [] for d in DAYS_KR}
+    #     qi = 0
+    #     for d in DAYS_KR:
+    #         if qi < len(queue):
+    #             day_blocks[d].append(queue[qi]); qi += 1
+    
+    #     # 일요일 등 남는 칸에는 루틴을 기본 추천으로 채워 넣을 수 있음 (선택)
+    #     if routines:
+    #         for d in DAYS_KR:
+    #             # 이미 메인 블록이 없으면 루틴 1개 추천
+    #             if not day_blocks[d]:
+    #                 day_blocks[d].append(f"루틴: {routines[0]}")
+    
+    #     # --- 편집 가능하게 세션에 저장 ---
+    #     if "day_edit" not in st.session_state:
+    #         st.session_state.day_edit = {}
+    #     if selected_week_key not in st.session_state.day_edit:
+    #         st.session_state.day_edit[selected_week_key] = {d: list(day_blocks[d]) for d in DAYS_KR}
+    
+    #     # --- 월~일 가로 컬럼 구성 ---
+    #     cols = st.columns(7)
+    #     for i, d in enumerate(DAYS_KR):
+    #         with cols[i]:
+    #             st.markdown(f"**{d}**")
+    #             # 현재 항목 (한 줄에 하나씩)
+    #             current = st.session_state.day_edit[selected_week_key].get(d, [])
+    #             text_value = "\n".join(current)
+    #             new_text = st.text_area(
+    #                 label="",
+    #                 value=text_value,
+    #                 key=f"dayedit::{selected_week_key}::{d}",
+    #                 height=160,
+    #                 placeholder="한 줄에 한 항목씩 입력"
+    #             )
+    #             st.session_state.day_edit[selected_week_key][d] = [
+    #                 x.strip() for x in new_text.splitlines() if x.strip()
+    #             ]
+    
+    #     st.markdown("---")
+    #     st.markdown("### ✅ 이 주 요약표")
+    #     rows = []
+    #     for d in DAYS_KR:
+    #         items = st.session_state.day_edit[selected_week_key].get(d, [])
+    #         rows.append({"요일": d, "할 일": " | ".join(items) if items else "-"})
+    #     week_df = pd.DataFrame(rows)
+    #     st.dataframe(week_df, use_container_width=True)
+
+
+    # ---
+
+    DAYS_KR = ["월", "화", "수", "목", "금", "토", "일"]
+    
+    # --- (전제) 주차 선택: 해당 주만 보이도록 ---
+    # weeks = {"1주차 (10/7~10/13)": "week1", ...} 가 이미 있다고 가정
     selected_week_label = st.selectbox("📆 볼 주차를 선택하세요", list(weeks.keys()))
     selected_week_key = weeks[selected_week_label]
     
-    st.markdown(f"### 🗓 {selected_week_label} — 요일별 블록 (월~일 가로 배치)")
+    # 주차 라벨에서 날짜 범위 파싱 (옵션)
+    def parse_week_dates(week_label: str, year: int = None):
+        if year is None:
+            year = datetime.date.today().year
+        rng = week_label.split("(")[1].strip(")")
+        start_str, end_str = rng.split("~")
+        sm, sd = map(int, start_str.split("/"))
+        em, ed = map(int, end_str.split("/"))
+        start = datetime.date(year, sm, sd)
+        end = datetime.date(year, em, ed)
+        days = [start + datetime.timedelta(days=i) for i in range((end - start).days + 1)]
+        # 길이가 7이 아닐 수 있어도 표시 맞춤
+        while len(days) < 7:
+            days.append(days[-1] + datetime.timedelta(days=1))
+        return days[:7]
     
-    # --- 선택된 주의 메인 1~2개 가져오기 ---
+    week_dates = parse_week_dates(selected_week_label)
+    
+    st.markdown(f"### 🗓 {selected_week_label} — 월~일 가로 블록 + 상세 플랜")
+    
+    # --- 이 주의 메인/루틴 가져오기 ---
     plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
-    mains = plan.get("focus", [])[:2]
+    mains = plan.get("focus", [])[:2]  # 메인 최대 2개
     routines = plan.get("routine", [])
     
-    # 메인이 없으면 안내 후 종료
     if not mains:
-        st.info("이 주차에 선택된 메인이 없습니다. 먼저 메인 1~2개를 선택해주세요.")
-    else:
-        # --- 메인을 3단계 데일리 블록으로 분해 ---
-        def build_flow(title: str):
-            return [f"{title} - {u}" for u in UNIT_TEMPLATES]
+        st.info("이 주차에 메인이 없습니다. 먼저 ‘주차별 메인/루틴’을 선택해주세요.")
+        st.stop()
     
-        flows = [build_flow(m) for m in mains]  # [[A1,A2,A3], [B1,B2,B3]]
-        # 교차 순서: A1, B1, A2, B2, A3, B3
-        queue = []
-        for i in range(3):
-            for f in flows:
-                if i < len(f):
-                    queue.append(f[i])
+    main_a = mains[0]
+    main_b = mains[1] if len(mains) > 1 else None
     
-        # --- 요일별 블록 자동 배치 (월~토 6칸 → 남는 일요일은 루틴/버퍼로) ---
+    # --- 자동 배치 로직 ---
+    def auto_place_blocks(main_a: str, main_b: str | None, routines: list[str]):
+        """
+        월/수/금 → A, 화/목/금 → B, 금요일은 마무리/체크업,
+        토/일은 미완료 보완/보충. 루틴은 요일별로 순환 삽입.
+        """
         day_blocks = {d: [] for d in DAYS_KR}
-        qi = 0
-        for d in DAYS_KR:
-            if qi < len(queue):
-                day_blocks[d].append(queue[qi]); qi += 1
     
-        # 일요일 등 남는 칸에는 루틴을 기본 추천으로 채워 넣을 수 있음 (선택)
+        # 메인 배치
+        assign_map = {
+            "월": [("메인", main_a)],
+            "화": [("메인", main_b if main_b else main_a)],
+            "수": [("메인", main_a)],
+            "목": [("메인", main_b if main_b else main_a)],
+            "금": [("메인-마무리/체크업", main_a)]
+        }
+        if main_b:
+            assign_map["금"].append(("메인-마무리/체크업", main_b))
+    
+        # 적용
+        for d, items in assign_map.items():
+            for tag, title in items:
+                if title:
+                    # 스텝 라벨 없이 핵심만 (UI엔 스텝 숨김)
+                    day_blocks[d].append(f"{tag}: {title}")
+    
+        # 주말: 보완/보충/회고 제안
+        day_blocks["토"].append("보완/보충: 이번 주 미완료 항목 처리")
+        day_blocks["일"].append("회고/정리: 다음 주 준비")
+    
+        # 루틴을 요일별로 고르게 순환 삽입
         if routines:
+            ri = 0
             for d in DAYS_KR:
-                # 이미 메인 블록이 없으면 루틴 1개 추천
-                if not day_blocks[d]:
-                    day_blocks[d].append(f"루틴: {routines[0]}")
+                # 금요일엔 '마무리'가 있으니 루틴은 1개만 제안
+                if d == "금":
+                    day_blocks[d].append(f"루틴: {routines[ri % len(routines)]}"); ri += 1
+                else:
+                    # 평일 1~2개, 주말 1개 정도로 제안 (필요시 조절 가능)
+                    day_blocks[d].append(f"루틴: {routines[ri % len(routines)]}"); ri += 1
     
-        # --- 편집 가능하게 세션에 저장 ---
-        if "day_edit" not in st.session_state:
-            st.session_state.day_edit = {}
-        if selected_week_key not in st.session_state.day_edit:
-            st.session_state.day_edit[selected_week_key] = {d: list(day_blocks[d]) for d in DAYS_KR}
+        return day_blocks
     
-        # --- 월~일 가로 컬럼 구성 ---
-        cols = st.columns(7)
-        for i, d in enumerate(DAYS_KR):
-            with cols[i]:
-                st.markdown(f"**{d}**")
-                # 현재 항목 (한 줄에 하나씩)
-                current = st.session_state.day_edit[selected_week_key].get(d, [])
-                text_value = "\n".join(current)
-                new_text = st.text_area(
-                    label="",
-                    value=text_value,
-                    key=f"dayedit::{selected_week_key}::{d}",
-                    height=160,
-                    placeholder="한 줄에 한 항목씩 입력"
-                )
-                st.session_state.day_edit[selected_week_key][d] = [
-                    x.strip() for x in new_text.splitlines() if x.strip()
-                ]
+    default_blocks = auto_place_blocks(main_a, main_b, routines)
     
-        st.markdown("---")
-        st.markdown("### ✅ 이 주 요약표")
-        rows = []
-        for d in DAYS_KR:
-            items = st.session_state.day_edit[selected_week_key].get(d, [])
-            rows.append({"요일": d, "할 일": " | ".join(items) if items else "-"})
-        week_df = pd.DataFrame(rows)
-        st.dataframe(week_df, use_container_width=True)
-
-
+    # --- ‘빈 플랜 박스’(상세 계획) + 자동 제안 블록 병기 ---
+    if "day_detail" not in st.session_state:
+        st.session_state.day_detail = {}
+    if selected_week_key not in st.session_state.day_detail:
+        st.session_state.day_detail[selected_week_key] = {d: [] for d in DAYS_KR}
+    
+    cols = st.columns(7)
+    for i, d in enumerate(DAYS_KR):
+        with cols[i]:
+            date_tag = f" ({week_dates[i].month}/{week_dates[i].day})" if week_dates else ""
+            st.markdown(f"**{d}{date_tag}**")
+    
+            # 자동 제안 블록(읽기용)
+            if default_blocks[d]:
+                st.caption("🔹 자동 제안")
+                for item in default_blocks[d]:
+                    st.write(f"- {item}")
+    
+            # 네가 직접 적는 ‘빈 플랜 박스’ (이게 요약표의 ‘해야할 일’로 반영됨)
+            st.caption("✏️ 오늘 상세 플랜 (한 줄에 한 항목)")
+            current_detail = st.session_state.day_detail[selected_week_key].get(d, [])
+            new_text = st.text_area(
+                label="",
+                value="\n".join(current_detail),
+                key=f"detail::{selected_week_key}::{d}",
+                height=140,
+                placeholder="예) 교수 3명 컨택 메일 발송\n예) 브랜드 스토리 문장 다듬기 30분\n예) 식단 기록 + 운동 30분"
+            )
+            st.session_state.day_detail[selected_week_key][d] = [
+                line.strip() for line in new_text.splitlines() if line.strip()
+            ]
+    
+    st.markdown("---")
+    st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")
+    
+    # 요약표: 네가 적은 상세 플랜이 우선, 비어있으면 자동 제안으로 보완
+    rows = []
+    for i, d in enumerate(DAYS_KR):
+        user_items = st.session_state.day_detail[selected_week_key].get(d, [])
+        if user_items:
+            items = user_items
+        else:
+            items = default_blocks[d] if default_blocks[d] else []
+        rows.append({
+            "요일": f"{d}",
+            "날짜": f"{week_dates[i].month}/{week_dates[i].day}" if week_dates else "-",
+            "해야할 일": " | ".join(items) if items else "-"
+        })
+    
+    week_df = pd.DataFrame(rows)
+    st.dataframe(week_df, use_container_width=True)
+    
+    # (선택) CSV 다운로드
+    csv = week_df.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "📥 이 주 계획 CSV 다운로드",
+        data=csv,
+        file_name=f"week_plan_{selected_week_key}.csv",
+        mime="text/csv"
+    )
 
 
     # ---

@@ -343,7 +343,7 @@ if uploaded_file:
             routine = st.multiselect(
                 "백그라운드 루틴 (최대 3개)",
                 options=all_goals,
-                max_selections=3,
+                max_selections=5,
                 key=f"{key}_routine"
             )
         st.session_state.weekly_plan[key] = {"focus": focus, "routine": routine}

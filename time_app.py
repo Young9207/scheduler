@@ -98,7 +98,7 @@ def compute_coverage(weeks, weekly_plan, month_goals):
         suggestions.append((wk, missing_focus[gi]))
         gi += 1
 
-    # 남은 누락 목표가 있다면: 과밀 주에서 교체 제안(루틴 → 포커스로 승격)
+    # 남은 누락 목표가 있다면: 과밀 주에서 교체 제안(배경 → 포커스로 승격)
     swaps = []  # [(from_week, goal_id)]  # 과밀 주의 routine을 포커스로 승격 제안
     if gi < len(missing_focus):
         # 과밀 주들
@@ -285,7 +285,7 @@ today_name = today_date.strftime("%A")
 st.set_page_config(page_title="Time Focus Flow", layout="wide")
 
 st.title("🧠 주간 시간관리 웹앱")
-st.markdown("분기/월 목표에서 이번 주의 메인 목표를 선택하고, 실행 루틴을 설계하세요.")
+st.markdown("분기/월 목표에서 이번 주의 메인 목표를 선택하고, 실행 배경을 설계하세요.")
 
 # 1. 엑셀 업로드
 uploaded_file = st.file_uploader("📁 엑셀 파일 업로드", type=["xlsx"])
@@ -300,7 +300,7 @@ if uploaded_file:
     
     # Streamlit 설정
     st.set_page_config(page_title="월별 포커스 & 주간 설정", layout="wide")
-    st.title("🧠 월별 포커스 선택 및 주간 메인/루틴 구성")
+    st.title("🧠 월별 포커스 선택 및 주간 메인/배경 구성")
 
     selected_month = st.selectbox("📅 월을 선택하세요", sorted(df["월"].dropna().unique()))
 
@@ -341,7 +341,7 @@ if uploaded_file:
             )
         with c3:
             routine = st.multiselect(
-                "백그라운드 루틴 (최대 5개)",
+                "백그라운드 배경 (최대 5개)",
                 options=all_goals,
                 max_selections=5,
                 key=f"{key}_routine"
@@ -363,7 +363,7 @@ if uploaded_file:
         summary_data.append({
             "주차": label,
             "메인 포커스": ", ".join(f) if f else "선택 안됨",
-            "루틴": ", ".join(r) if r else "선택 안됨"
+            "배경": ", ".join(r) if r else "선택 안됨"
         })
     
     summary_df = pd.DataFrame(summary_data)
@@ -395,7 +395,7 @@ if uploaded_file:
             "구분": "최대선" if g["kind"]=="max" else "최소선",
             "목표": g["label"],
             "포커스 횟수": cv["focus"],
-            "루틴 횟수": cv["routine"],
+            "배경 횟수": cv["routine"],
             "배치 주": ", ".join(cv["weeks"]) if cv["weeks"] else "-",
             "상태": ("누락(포커스 미배정)" if (g["kind"]=="max" and cv["focus"]==0) else "OK")
         })
@@ -493,7 +493,7 @@ if uploaded_file:
                 "추가된 포커스": " | ".join(added) if added else "-",
                 "제거된 포커스(가상)": " | ".join(removed) if removed else "-",
                 "가상 계획 포커스": " | ".join(virtual_plan.get(wk, {}).get("focus", [])) if virtual_plan.get(wk) else "-",
-                "가상 계획 루틴":  " | ".join(virtual_plan.get(wk, {}).get("routine", [])) if virtual_plan.get(wk) else "-",
+                "가상 계획 배경":  " | ".join(virtual_plan.get(wk, {}).get("routine", [])) if virtual_plan.get(wk) else "-",
             })
         diff_df = pd.DataFrame(diff_rows)
     
@@ -505,7 +505,7 @@ if uploaded_file:
             file_name="weekly_plan_virtual_diff.csv", mime="text/csv", key="dl_virtual_diff"
         )
     
-        # 가상 계획 전체 표(주차별 포커스/루틴)
+        # 가상 계획 전체 표(주차별 포커스/배경)
         st.markdown("##### 🗂 가상 계획(제안 반영본) 일람")
         plan_rows = []
         for label, wk in weeks.items():
@@ -513,7 +513,7 @@ if uploaded_file:
             plan_rows.append({
                 "주차": label,
                 "포커스(가상)": " | ".join(v.get("focus", [])) or "-",
-                "루틴(가상)":  " | ".join(v.get("routine", [])) or "-",
+                "배경(가상)":  " | ".join(v.get("routine", [])) or "-",
             })
         virtual_df = pd.DataFrame(plan_rows)
         st.dataframe(virtual_df, use_container_width=True)
@@ -716,13 +716,13 @@ if uploaded_file:
     
     st.markdown(f"### 🗓 {selected_week_label} — 월-일 가로 블록 + 상세 플랜")
     
-    # --- 이 주의 메인/루틴 가져오기 ---
+    # --- 이 주의 메인/배경 가져오기 ---
     plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
     mains = plan.get("focus", [])[:2]  # 메인 최대 2개
     routines = plan.get("routine", [])
     
     if not mains:
-        st.info("이 주차에 메인이 없습니다. 먼저 ‘주차별 메인/루틴’을 선택해주세요.")
+        st.info("이 주차에 메인이 없습니다. 먼저 ‘주차별 메인/배경’을 선택해주세요.")
         st.stop()
     
     main_a = mains[0]
@@ -732,7 +732,7 @@ if uploaded_file:
     def auto_place_blocks(main_a: str, main_b: str | None, routines: list[str]):
         """
         월/수/금 → A, 화/목/금 → B, 금요일은 마무리/체크업,
-        토/일은 미완료 보완/보충. 루틴은 요일별로 순환 삽입.
+        토/일은 미완료 보완/보충. 배경은 요일별로 순환 삽입.
         """
         day_blocks = {d: [] for d in DAYS_KR}
     
@@ -758,16 +758,16 @@ if uploaded_file:
         day_blocks["토"].append("보완/보충: 이번 주 미완료 항목 처리")
         day_blocks["일"].append("회고/정리: 다음 주 준비")
     
-        # 루틴을 요일별로 고르게 순환 삽입
+        # 배경을 요일별로 고르게 순환 삽입
         if routines:
             ri = 0
             for d in DAYS_KR:
-                # 금요일엔 '마무리'가 있으니 루틴은 1개만 제안
+                # 금요일엔 '마무리'가 있으니 배경은 1개만 제안
                 if d == "금":
-                    day_blocks[d].append(f"루틴: {routines[ri % len(routines)]}"); ri += 1
+                    day_blocks[d].append(f"배경: {routines[ri % len(routines)]}"); ri += 1
                 else:
                     # 평일 1~2개, 주말 1개 정도로 제안 (필요시 조절 가능)
-                    day_blocks[d].append(f"루틴: {routines[ri % len(routines)]}"); ri += 1
+                    day_blocks[d].append(f"배경: {routines[ri % len(routines)]}"); ri += 1
     
         return day_blocks
     
@@ -797,19 +797,19 @@ if uploaded_file:
             date_tag = f" ({week_dates[i].month}/{week_dates[i].day})" if week_dates else ""
             st.markdown(f"**{d}{date_tag}**")
     
-            # 자동 제안 → 메인/루틴 분리해서 보여주기
+            # 자동 제안 → 메인/배경 분리해서 보여주기
             auto_items = default_blocks.get(d, []) if isinstance(default_blocks, dict) else []
-            auto_main = [x for x in auto_items if not x.startswith("루틴:")]
-            auto_routine = [x for x in auto_items if x.startswith("루틴:")]
+            auto_main = [x for x in auto_items if not x.startswith("배경:")]
+            auto_routine = [x for x in auto_items if x.startswith("배경:")]
     
             if auto_main or auto_routine:
                 st.caption("🔹 자동 제안")
                 if auto_main:
                     st.write("- 메인: " + " | ".join(auto_main))
                 if auto_routine:
-                    st.write("- 루틴: " + " | ".join(auto_routine))
+                    st.write("- 배경: " + " | ".join(auto_routine))
     
-            # ✏️ 상세 플랜(메인/루틴) 두 칸
+            # ✏️ 상세 플랜(메인/배경) 두 칸
             st.caption("✏️ 오늘 상세 플랜")
             c_main, c_routine = st.columns(2)
     
@@ -825,9 +825,9 @@ if uploaded_file:
                 )
             with c_routine:
                 routine_text = st.text_area(
-                    "루틴", value="\n".join(cur_routine),
+                    "배경", value="\n".join(cur_routine),
                     key=f"detail::{selected_week_key}::{d}::routine",
-                    height=120, placeholder="루틴 관련 상세 계획 (한 줄에 한 항목)"
+                    height=120, placeholder="배경 관련 상세 계획 (한 줄에 한 항목)"
                 )
     
             st.session_state.day_detail[selected_week_key][d]["main"] = [
@@ -843,12 +843,12 @@ if uploaded_file:
     for i, d in enumerate(DAYS_KR):
         date_str = f"{week_dates[i].month}/{week_dates[i].day}" if week_dates else "-"
     
-        # 자동 제안(메인/루틴 분리)
+        # 자동 제안(메인/배경 분리)
         auto_items = default_blocks.get(d, []) if isinstance(default_blocks, dict) else []
-        auto_main = [x for x in auto_items if not x.startswith("루틴:")]
-        auto_routine = [x for x in auto_items if x.startswith("루틴:")]
+        auto_main = [x for x in auto_items if not x.startswith("배경:")]
+        auto_routine = [x for x in auto_items if x.startswith("배경:")]
     
-        # 상세 플랜(메인/루틴)
+        # 상세 플랜(메인/배경)
         detail_main = st.session_state.day_detail[selected_week_key][d]["main"]
         detail_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
     
@@ -860,9 +860,9 @@ if uploaded_file:
             "요일": d,
             "날짜": date_str,
             "자동 제안(메인)": " | ".join(auto_main) if auto_main else "-",
-            "자동 제안(루틴)": " | ".join(auto_routine) if auto_routine else "-",
+            "자동 제안(배경)": " | ".join(auto_routine) if auto_routine else "-",
             "상세 플랜(메인)": " | ".join(detail_main) if detail_main else "-",
-            "상세 플랜(루틴)": " | ".join(detail_routine) if detail_routine else "-",
+            "상세 플랜(배경)": " | ".join(detail_routine) if detail_routine else "-",
         })
     
     week_df = pd.DataFrame(rows)
@@ -889,7 +889,7 @@ if uploaded_file:
     with st.expander("CSV 적용 옵션 열기", expanded=False):
         apply_mode = st.radio(
             "적용 방식",
-            ["비어있지 않은 값만 덮어쓰기", "완전 덮어쓰기(해당 요일 메인/루틴 전부 교체)"],
+            ["비어있지 않은 값만 덮어쓰기", "완전 덮어쓰기(해당 요일 메인/배경 전부 교체)"],
             index=0,
             horizontal=True,
         )
@@ -922,7 +922,7 @@ if uploaded_file:
                     uploaded_csv.seek(0)
                     df = pd.read_csv(uploaded_csv, encoding="utf-8")
     
-                # 필요한 컬럼 확인 (우리는 '요일', '상세 플랜(메인)', '상세 플랜(루틴)'만 사용)
+                # 필요한 컬럼 확인 (우리는 '요일', '상세 플랜(메인)', '상세 플랜(배경)'만 사용)
                 if "요일" not in df.columns:
                     st.warning("CSV에 '요일' 컬럼이 없습니다. 기존 다운로드한 포맷을 사용해 주세요.")
                 else:
@@ -936,7 +936,7 @@ if uploaded_file:
                         if not day:
                             continue
                         main_raw = row.get("상세 플랜(메인)", "")
-                        routine_raw = row.get("상세 플랜(루틴)", "")
+                        routine_raw = row.get("상세 플랜(배경)", "")
                         csv_map[day] = {
                             "main": _parse_pipe_or_lines(main_raw),
                             "routine": _parse_pipe_or_lines(routine_raw),
@@ -978,21 +978,21 @@ if uploaded_file:
     day_options = DAYS_KR  # ["월","화","수","목","금","토","일"]
     sel_day = st.selectbox("🗓 오늘 요일을 선택/확인하세요", day_options, index=today_idx_auto if today_idx_auto < len(day_options) else 0)
     
-    # 2) 오늘에 해당하는 상세 플랜(메인/루틴) 불러오기 (없으면 자동 제안으로 대체)
+    # 2) 오늘에 해당하는 상세 플랜(메인/배경) 불러오기 (없으면 자동 제안으로 대체)
     detail_main = st.session_state.day_detail[selected_week_key][sel_day]["main"]
     detail_routine = st.session_state.day_detail[selected_week_key][sel_day]["routine"]
     
     auto_items = default_blocks.get(sel_day, []) if isinstance(default_blocks, dict) else []
-    auto_main = [x for x in auto_items if not x.startswith("루틴:")]
-    auto_routine = [x for x in auto_items if x.startswith("루틴:")]
+    auto_main = [x for x in auto_items if not x.startswith("배경:")]
+    auto_routine = [x for x in auto_items if x.startswith("배경:")]
     
     final_main = detail_main if detail_main else auto_main
     final_routine = detail_routine if detail_routine else auto_routine
     
-    # 3) 태스크 목록 만들기 (메인/루틴에 라벨 붙이기)
+    # 3) 태스크 목록 만들기 (메인/배경에 라벨 붙이기)
     today_tasks = []
     today_tasks += [("[메인]", t) for t in final_main]
-    today_tasks += [("[루틴]", t.replace("루틴:", "").strip()) for t in final_routine]
+    today_tasks += [("[배경]", t.replace("배경:", "").strip()) for t in final_routine]
     
     # 4) 체크 상태 저장소 준비 (날짜+주차 기준으로 저장)
     if "completed_by_day" not in st.session_state:

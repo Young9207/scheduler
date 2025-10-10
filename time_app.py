@@ -77,13 +77,13 @@ if uploaded_file:
     st.markdown("### ✅ 당신의 주간 포커스 요약")
     
     for label, key in weeks.items():
-    f = weekly_plan[key]["focus"]
-    r = weekly_plan[key]["routine"]
-    st.markdown(f"**📌 {label}**")
-    st.write("🎯 메인 포커스:", f if f else "선택 안됨")
-    st.write("🌱 루틴:", r if r else "선택 안됨")
-    st.markdown("---")
-
+        f = weekly_plan[key]["focus"]
+        r = weekly_plan[key]["routine"]
+        st.markdown(f"**📌 {label}**")
+        st.write("🎯 메인 포커스:", f if f else "선택 안됨")
+        st.write("🌱 루틴:", r if r else "선택 안됨")
+        st.markdown("---")
+    
 
    
     # st.markdown("### 🎯 이번 주 포커스 목표")

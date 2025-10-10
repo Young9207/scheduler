@@ -117,7 +117,7 @@ for label, key in weeks.items():
         "주차": label,
         "메인 포커스": ", ".join(f) if f else "선택 안됨",
         "루틴": ", ".join(r) if r else "선택 안됨"
-#     })
+    })
 # st.set_page_config(page_title="Time Focus Flow", layout="wide")
 
 # st.title("🧠 주간 시간관리 웹앱")

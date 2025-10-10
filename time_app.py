@@ -4,6 +4,81 @@ import re
 import calendar
 import datetime
 import hashlib
+import json
+from pathlib import Path
+import streamlit as st
+
+STATE_FILE = Path("state_storage.json")
+STATE_KEYS = ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]
+
+def _serialize_state(s):
+    """st.session_state → JSON 직렬화 가능한 dict로 변환"""
+    out = {}
+    for k in STATE_KEYS:
+        if k not in s:
+            continue
+        v = s[k]
+        # 특수 타입 처리
+        if k == "completed_by_day":
+            # {(week_key, date_str): set(...)} → {"weekKey|date": list(...)}
+            conv = {}
+            for tkey, val in v.items():
+                if isinstance(tkey, tuple):
+                    saved_key = "|".join(list(tkey))
+                else:
+                    saved_key = str(tkey)
+                conv[saved_key] = list(val)  # set → list
+            out[k] = conv
+        else:
+            out[k] = v
+    return out
+
+def _deserialize_state(d):
+    """JSON → 세션 상태 복원"""
+    result = {}
+    for k in STATE_KEYS:
+        if k not in d:
+            continue
+        v = d[k]
+        if k == "completed_by_day":
+            # {"weekKey|date": list(...)} → {(weekKey, date): set(...)}
+            conv = {}
+            for skey, lst in v.items():
+                parts = skey.split("|")
+                tkey = tuple(parts) if len(parts) > 1 else (skey,)
+                conv[tkey] = set(lst)
+            result[k] = conv
+        else:
+            result[k] = v
+    return result
+
+def load_state():
+    if STATE_FILE.exists():
+        try:
+            data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+            restored = _deserialize_state(data)
+            for k, v in restored.items():
+                st.session_state[k] = v
+            st.sidebar.success("저장된 상태를 불러왔어요.")
+        except Exception as e:
+            st.sidebar.warning(f"상태 불러오기 오류: {e}")
+
+def save_state():
+    try:
+        payload = _serialize_state(st.session_state)
+        STATE_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        st.sidebar.info("상태 저장 완료.")
+    except Exception as e:
+        st.sidebar.error(f"상태 저장 실패: {e}")
+
+def reset_state():
+    for k in STATE_KEYS:
+        if k in st.session_state:
+            del st.session_state[k]
+    if STATE_FILE.exists():
+        STATE_FILE.unlink(missing_ok=True)
+    st.sidebar.warning("상태를 초기화했어요.")
+
 
 
 # 오늘이 포함된 주차 자동 탐색
@@ -111,7 +186,6 @@ if uploaded_file:
     st.title("🧠 월별 포커스 선택 및 주간 메인/루틴 구성")
 
     selected_month = st.selectbox("📅 월을 선택하세요", sorted(df["월"].dropna().unique()))
-    #     selected_month = st.selectbox("📅 월을 선택하세요", sorted(df["월"].dropna().unique()))
 
     year = datetime.date.today().year
     month_num = month_map[selected_month]
@@ -122,7 +196,7 @@ if uploaded_file:
     # 2. 해당 월 목표표 보기
     filtered = df[df["월"] == selected_month].reset_index(drop=True)
     st.markdown("### 🔍 해당 월의 목표 목록")
-    st.dataframe(filtered[["프로젝트", "최소선", "최대선"]], use_container_width=True)
+    st.dataframe(filtered[["프로젝트", "최대선", "최소선"]], use_container_width=True)
 
     
     st.markdown(f"### 🗓 {selected_month}의 주차별 일정 ({len(weeks)}주차)")
@@ -337,38 +411,6 @@ if uploaded_file:
                 t.strip() for t in routine_text.splitlines() if t.strip()
             ]
 
-    # if "day_detail" not in st.session_state:
-    #     st.session_state.day_detail = {}
-    # if selected_week_key not in st.session_state.day_detail:
-    #     st.session_state.day_detail[selected_week_key] = {d: [] for d in DAYS_KR}
-
-    # cols = st.columns(7)
-    # for i, d in enumerate(DAYS_KR):
-    #     with cols[i]:
-    #         date_tag = f" ({week_dates[i].month}/{week_dates[i].day})" if week_dates else ""
-    #         st.markdown(f"**{d}{date_tag}**")
-    
-    #         # 자동 제안 블록(읽기용)
-    #         if default_blocks[d]:
-    #             st.caption("🔹 자동 제안")
-    #             for item in default_blocks[d]:
-    #                 st.write(f"- {item}")
-    
-    #         # 네가 직접 적는 ‘빈 플랜 박스’ (이게 요약표의 ‘해야할 일’로 반영됨)
-    #         st.caption("✏️ 오늘 상세 플랜 (한 줄에 한 항목)")
-    #         current_detail = st.session_state.day_detail[selected_week_key].get(d, [])
-    #         new_text = st.text_area(
-    #             label="",
-    #             value="\n".join(current_detail),
-    #             key=f"detail::{selected_week_key}::{d}",
-    #             height=140,
-    #             placeholder="햄보칸 하루"
-    #         )
-    #         st.session_state.day_detail[selected_week_key][d] = [
-    #             line.strip() for line in new_text.splitlines() if line.strip()
-    #         ]
-    
-    st.markdown("---")
     st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")
     st.markdown("---")        
     rows = []
@@ -489,29 +531,15 @@ if uploaded_file:
         st.dataframe(df_today, use_container_width=True)
         csv_today = df_today.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 오늘 체크 내역 CSV 다운로드", data=csv_today, file_name=f"today_tasks_{date_str}.csv", mime="text/csv")
-
-    # st.markdown("### ✅ 오늘의 실행 체크리스트")
-    
-    # today_tasks = []
-    # for f in plan.get("focus", []):
-    #     today_tasks.append(f"[포커스] {f}")
-    # for r in plan.get("routine", []):
-    #     today_tasks.append(f"[루틴] {r}")
-    
-    # completed = []
-    # for task in today_tasks:
-    #     if st.checkbox(task, key=f"chk_{task}"):
-    #         completed.append(task)
-    
-    # if today_tasks:
-    #     percent = int(len(completed) / len(today_tasks) * 100)
-    #     st.progress(percent)
-    #     st.write(f"📊 오늘의 달성률: **{percent}%**")
-    # else:
-    #     st.info("오늘 할 일이 아직 배정되지 않았습니다.")
-    
+ 
     # --- 주간 회고 ---
     st.markdown("### 📝 이번 주 회고 메모")
     review_text = st.text_area("이번 주를 돌아보며 남기고 싶은 메모를 입력하세요", "")
     st.session_state["weekly_review"] = {current_week_label: review_text}
+
+if "state_loaded_once" not in st.session_state:
+    load_state()
+    st.session_state["state_loaded_once"] = True
+# 페이지 맨 끝 (모든 UI 렌더 후)
+save_state()
 

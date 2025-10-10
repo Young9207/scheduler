@@ -96,6 +96,12 @@ if uploaded_file:
     month_num = month_map[selected_month]
     
     weeks = generate_weeks_for_month(year, month_num)
+
+    # 2. 해당 월 목표표 보기
+    filtered = df[df["월"] == selected_month].reset_index(drop=True)
+    st.markdown("### 🔍 해당 월의 목표 목록")
+    st.dataframe(filtered[["프로젝트", "최소선", "최대선"]], use_container_width=True)
+
     
     st.markdown(f"### 🗓 {selected_month}의 주차별 일정 ({len(weeks)}주차)")
     

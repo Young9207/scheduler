@@ -320,14 +320,12 @@ if uploaded_file:
     
         # 최종 '해야할 일'은 상세 플랜이 있으면 그걸 우선, 없으면 자동 제안 사용
         final_items = user_items if user_items else auto_items
-        final_col = " | ".join(final_items) if final_items else "-"
     
         rows.append({
             "요일": d,
             "날짜": date_str,
             "자동 제안": auto_col,
             "상세 플랜": detail_col,         # 👈 새로 파서 넣는 컬럼
-            "해야할 일": final_col            # 👈 상세 우선 반영
         })
     
     week_df = pd.DataFrame(rows)

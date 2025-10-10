@@ -86,8 +86,6 @@ month_map = {"1월": 1, "2월": 2, "3월": 3, "4월": 4, "5월": 5, "6월": 6,
 # --- 현재 날짜 및 주차 판별 ---
 today_date = datetime.date.today()
 today_name = today_date.strftime("%A")  
-current_week_label = find_current_week_label(weeks)
-
 
 
 st.set_page_config(page_title="Time Focus Flow", layout="wide")
@@ -156,6 +154,9 @@ if uploaded_file:
                 key=f"{key}_routine"
             )
         st.session_state.weekly_plan[key] = {"focus": focus, "routine": routine}
+        
+    current_week_label = find_current_week_label(weeks)
+
     
     # --- [6] 전체 요약 ---
     st.markdown("---")
@@ -307,6 +308,8 @@ if uploaded_file:
     summary_df = pd.DataFrame(rows)
     st.dataframe(summary_df, use_container_width=True)
 #--------테스트    
+    current_week_label = find_current_week_label(weeks)
+
     if current_week_label:
         st.markdown(f"### 📅 이번 주: **{current_week_label}**")
         plan = st.session_state.weekly_plan.get(weeks[current_week_label], {})

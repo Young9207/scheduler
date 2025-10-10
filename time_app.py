@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 import streamlit as st
 
-STATE_FILE = Path("state_storage.json")ㄹ
+STATE_FILE = Path("state_storage.json")
 STATE_KEYS = ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]
 
 import unicodedata

@@ -534,8 +534,19 @@ if uploaded_file:
  
     # --- 주간 회고 ---
     st.markdown("### 📝 이번 주 회고 메모")
-    review_text = st.text_area("이번 주를 돌아보며 남기고 싶은 메모를 입력하세요", "")
-    st.session_state["weekly_review"] = {current_week_label: review_text}
+    if "weekly_review" not in st.session_state:
+        st.session_state.weekly_review = {}
+    
+    current_review = st.session_state.weekly_review.get(selected_week_key, "")
+    review_text = st.text_area(
+        "이번 주를 돌아보며 남기고 싶은 메모",
+        value=current_review,
+        key=f"review::{selected_week_key}",
+        height=140,
+        placeholder="이번 주 무엇을 배웠는지, 다음 주에 개선할 1가지만 적어도 좋아요."
+    )
+
+    st.session_state.weekly_review[selected_week_key] = review_text
 
 if "state_loaded_once" not in st.session_state:
     load_state()

@@ -39,28 +39,29 @@ def parse_goals(text: str):
     return results
 
 # --- [2] 주차 계산 함수 ---
-def generate_weeks_for_month(year: int, month: int):
+def generate_calendar_weeks(year: int, month: int):
     """
-    주어진 연도/월 기준으로 (주차명, 주차코드) 딕셔너리 생성
+    실제 달력 기준 (월요일~일요일)으로 주차 계산
+    월 경계 포함, 예: 9/30(월)~10/6(일)
     """
     weeks = {}
-    # 월의 마지막 날짜 구하기
-    last_day = calendar.monthrange(year, month)[1]
 
-    # 1일 ~ 마지막일까지 datetime 객체 리스트
-    days = [datetime.date(year, month, d) for d in range(1, last_day + 1)]
+    # 이번 달 1일과 마지막 날
+    first_day = datetime.date(year, month, 1)
+    last_day = datetime.date(year, month, calendar.monthrange(year, month)[1])
 
-    # 주차 단위로 나누기 (월요일 시작 기준)
+    # 이번 달 첫 주의 월요일 찾기 (1일 이전일 수도 있음)
+    start_of_first_week = first_day - datetime.timedelta(days=first_day.weekday())
+
+    current_start = start_of_first_week
     week_num = 1
-    start_day = days[0]
-    for i in range(0, len(days), 7):
-        end_day = days[i:i + 7][-1]
-        label = f"{week_num}주차 ({start_day.month}/{start_day.day}~{end_day.month}/{end_day.day})"
+
+    while current_start <= last_day:
+        current_end = current_start + datetime.timedelta(days=6)
+        label = f"{week_num}주차 ({current_start.month}/{current_start.day}~{current_end.month}/{current_end.day})"
         weeks[label] = f"week{week_num}"
+        current_start += datetime.timedelta(days=7)
         week_num += 1
-        start_day = end_day + datetime.timedelta(days=1)
-        if start_day.month != month:
-            break
 
     return weeks
 
@@ -95,7 +96,8 @@ if uploaded_file:
     year = datetime.date.today().year
     month_num = month_map[selected_month]
     
-    weeks = generate_weeks_for_month(year, month_num)
+    weeks = generate_calendar_weeks(year, month_num)
+
 
     # 2. 해당 월 목표표 보기
     filtered = df[df["월"] == selected_month].reset_index(drop=True)

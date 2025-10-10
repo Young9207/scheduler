@@ -41,54 +41,71 @@ if uploaded_file:
     all_goals = list({g.strip() for text in all_goals for g in str(text).split("\n") if g.strip()})
     
     # 4. 주차별 선택 UI
+    # 4. 주차별 선택 UI
     st.markdown("## 📆 주차별 메인 포커스 & 루틴 선택")
+    
     weeks = {
-    "1주차 (10/1~10/6)": "week1",
-    "2주차 (10/7~10/13)": "week2",
-    "3주차 (10/14~10/20)": "week3",
-    "4주차 (10/21~10/27)": "week4",
-    "5주차 (10/28~10/31)": "week5",
+        "1주차 (10/1~10/6)": "week1",
+        "2주차 (10/7~10/13)": "week2",
+        "3주차 (10/14~10/20)": "week3",
+        "4주차 (10/21~10/27)": "week4",
+        "5주차 (10/28~10/31)": "week5",
     }
     
-    weekly_plan = {}
+    # 세션 상태 초기화 (유지용)
+    if "weekly_plan" not in st.session_state:
+        st.session_state.weekly_plan = {}
     
-    # 선택된 주차에 대해서만 UI 노출
+    # 한눈에 보기 좋은 표 형태 (각 주차가 한 행)
     for label, key in weeks.items():
-        st.subheader(f"📌 {label}")
-
-        col1, col2 = st.columns(2)
-
-    with col1:
-        focus = st.multiselect(
-            f"{label} - 메인 포커스 (1~2개)",
-            options=all_goals,
-            max_selections=2,
-            key=f"{key}_focus"
-        )
-
-    with col2:
-        routine = st.multiselect(
-            f"{label} - 루틴 (선택적)",
-            options=all_goals,
-            max_selections=3,
-            key=f"{key}_routine"
-        )
-
-    # 선택 내용 저장
-    weekly_plan[key] = {
-        "focus": focus,
-        "routine": routine
-    }
-
-    # 요약은 마지막에 한 번에
+        c1, c2, c3 = st.columns([1.5, 3, 3])  # 주차 / 메인 / 루틴
+    
+        with c1:
+            st.markdown(f"**📌 {label}**")
+    
+        with c2:
+            focus = st.multiselect(
+                "메인 포커스 (1~2개)",
+                options=all_goals,
+                max_selections=2,
+                key=f"{key}_focus"
+            )
+    
+        with c3:
+            routine = st.multiselect(
+                "백그라운드 루틴 (최대 3개)",
+                options=all_goals,
+                max_selections=3,
+                key=f"{key}_routine"
+            )
+    
+        # 주차별 선택 내용 저장
+        st.session_state.weekly_plan[key] = {
+            "focus": focus,
+            "routine": routine
+        }
+    
+    st.markdown("---")
     st.markdown("## 📝 전체 요약")
+    
+    # 요약 테이블 생성
+    summary_data = []
     for label, key in weeks.items():
-        f = weekly_plan[key]["focus"]
-        r = weekly_plan[key]["routine"]
-        st.markdown(f"**📅 {label}**")
-        st.write("🎯 메인 포커스:", f if f else "선택 안됨")
-        st.write("🌱 루틴:", r if r else "선택 안됨")
-        st.markdown("---")
+        f = st.session_state.weekly_plan.get(key, {}).get("focus", [])
+        r = st.session_state.weekly_plan.get(key, {}).get("routine", [])
+        summary_data.append({
+            "주차": label,
+            "메인 포커스": ", ".join(f) if f else "선택 안됨",
+            "루틴": ", ".join(r) if r else "선택 안됨"
+        })
+    
+    summary_df = pd.DataFrame(summary_data)
+    st.dataframe(summary_df, use_container_width=True)
+
+
+
+
+
 
     
 

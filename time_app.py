@@ -277,7 +277,7 @@ if uploaded_file:
     if selected_week_key not in st.session_state.day_detail:
         st.session_state.day_detail[selected_week_key] = {d: [] for d in DAYS_KR}
 
-    cols = st.columns(7)
+    cols = st.columns(6)
     for i, d in enumerate(DAYS_KR):
         with cols[i]:
             date_tag = f" ({week_dates[i].month}/{week_dates[i].day})" if week_dates else ""

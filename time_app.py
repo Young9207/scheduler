@@ -341,7 +341,7 @@ if uploaded_file:
             )
         with c3:
             routine = st.multiselect(
-                "백그라운드 루틴 (최대 3개)",
+                "백그라운드 루틴 (최대 5개)",
                 options=all_goals,
                 max_selections=5,
                 key=f"{key}_routine"

@@ -4,6 +4,19 @@ import re
 import calendar
 import datetime
 
+# 오늘이 포함된 주차 자동 탐색
+def find_current_week_label(weeks_dict):
+    for label in weeks_dict.keys():
+        date_range = label.split("(")[1].strip(")")
+        start_str, end_str = date_range.split("~")
+        start_month, start_day = map(int, start_str.split("/"))
+        end_month, end_day = map(int, end_str.split("/"))
+        start_date = datetime.date(today_date.year, start_month, start_day)
+        end_date = datetime.date(today_date.year, end_month, end_day)
+        if start_date <= today_date <= end_date:
+            return label
+    return None
+    
 def parse_goals(text: str):
     """
     문자열에서 [소주제]와 • 항목들을 매핑하여 리스트로 반환
@@ -149,96 +162,9 @@ if uploaded_file:
             "메인 포커스": ", ".join(f) if f else "선택 안됨",
             "루틴": ", ".join(r) if r else "선택 안됨"
         })
-# st.set_page_config(page_title="Time Focus Flow", layout="wide")
 
-# st.title("🧠 주간 시간관리 웹앱")
-# st.markdown("분기/월 목표에서 이번 주의 메인 목표를 선택하고, 실행 루틴을 설계하세요.")
-
-# # 1. 엑셀 업로드
-# uploaded_file = st.file_uploader("📁 엑셀 파일 업로드", type=["xlsx"])
-
-# if uploaded_file:
-#     with st.expander("🔍 시트 미리보기"):
-#         sheet_names = pd.ExcelFile(uploaded_file).sheet_names
-#         st.write("엑셀 시트 목록:", sheet_names)
-
-#     # 시트 선택
-#     # selected_sheet = st.selectbox("📄 사용할 시트를 선택하세요", sheet_names)
-#     # df = pd.read_excel(uploaded_file, sheet_name=selected_sheet)
-#     # goals = df.dropna().iloc[:, 0].unique().tolist()
-
-#     ######    
-#     # 시트 불러오기
-#     df = pd.read_excel(uploaded_file, sheet_name="최대선_최소선")
-#     df = df[["프로젝트", "월", "최소선", "최대선", "측정지표"]].dropna(subset=["월"])
-    
-#     # Streamlit 설정
-#     st.set_page_config(page_title="월별 포커스 & 주간 설정", layout="wide")
-#     st.title("🧠 월별 포커스 선택 및 주간 메인/루틴 구성")
-    
-#     # 1. 월 선택
-#     selected_month = st.selectbox("📅 월을 선택하세요", sorted(df["월"].dropna().unique()))
-    
-#     # 2. 해당 월 목표표 보기
-#     filtered = df[df["월"] == selected_month].reset_index(drop=True)
-#     st.markdown("### 🔍 해당 월의 목표 목록")
-#     st.dataframe(filtered[["프로젝트", "최소선", "최대선"]], use_container_width=True)
-
-#     text_data = df[df["월"] == "10월"]["최대선"].iloc[0]
-#     parsed = parse_goals(text_data)
-
-#     # 3. 목표 항목 추출
-#     all_goals = filtered["최소선"].dropna().tolist() + filtered["최대선"].dropna().tolist()
-#     all_goals = list({g.strip() for text in all_goals for g in str(text).split("\n") if g.strip()})
-    
-#     # 4. 주차별 선택 UI
-#     # 4. 주차별 선택 UI
-#     st.markdown("## 📆 주차별 메인 포커스 & 루틴 선택")
-    
-#     weeks = {
-#         "1주차 (10/1~10/6)": "week1",
-#         "2주차 (10/7~10/13)": "week2",
-#         "3주차 (10/14~10/20)": "week3",
-#         "4주차 (10/21~10/27)": "week4",
-#         "5주차 (10/28~10/31)": "week5",
-#     }
-    
-#     # 세션 상태 초기화 (유지용)
-#     if "weekly_plan" not in st.session_state:
-#         st.session_state.weekly_plan = {}
-    
-#     # 한눈에 보기 좋은 표 형태 (각 주차가 한 행)
-#     for label, key in weeks.items():
-#         c1, c2, c3 = st.columns([1.5, 3, 3])  # 주차 / 메인 / 루틴
-
-#         with c1:
-#             st.markdown(f"**📌 {label}**")
-    
-#         with c2:
-#             focus = st.multiselect(
-#                 "메인 포커스 (1~2개)",
-#                 options=all_goals,
-#                 max_selections=2,
-#                 key=f"{key}_focus"
-#             )
-    
-#         with c3:
-#             routine = st.multiselect(
-#                 "백그라운드 루틴 (최대 3개)",
-#                 options=all_goals,
-#                 max_selections=3,
-#                 key=f"{key}_routine"
-#             )
-    
-#         # 주차별 선택 내용 저장
-#         st.session_state.weekly_plan[key] = {
-#             "focus": focus,
-#             "routine": routine
-#         }
-    
     st.markdown("---")
-    st.markdown("## 📝 전체 요약")
-    
+    st.markdown("## 📝 이번달 주간 요약")
     # 요약 테이블 생성
     summary_data = []
     for label, key in weeks.items():
@@ -252,38 +178,46 @@ if uploaded_file:
     
     summary_df = pd.DataFrame(summary_data)
     st.dataframe(summary_df, use_container_width=True)
-
-
+#--------테스트
+    current_week_label = find_current_week_label(weeks)
+    
+    if current_week_label:
+        st.markdown(f"### 📅 이번 주: **{current_week_label}**")
+        plan = st.session_state.weekly_plan.get(weeks[current_week_label], {})
+    else:
+        st.warning("오늘 날짜에 해당하는 주차를 찾을 수 없습니다.")
+        plan = {"focus": [], "routine": []}
+    
+    # --- 오늘의 실행 블록 ---
+    st.markdown("### ✅ 오늘의 실행 체크리스트")
+    
+    today_tasks = []
+    for f in plan.get("focus", []):
+        today_tasks.append(f"[포커스] {f}")
+    for r in plan.get("routine", []):
+        today_tasks.append(f"[루틴] {r}")
+    
+    completed = []
+    for task in today_tasks:
+        if st.checkbox(task, key=f"chk_{task}"):
+            completed.append(task)
+    
+    if today_tasks:
+        percent = int(len(completed) / len(today_tasks) * 100)
+        st.progress(percent)
+        st.write(f"📊 오늘의 달성률: **{percent}%**")
+    else:
+        st.info("오늘 할 일이 아직 배정되지 않았습니다.")
+    
+    # --- 주간 회고 ---
+    st.markdown("### 📝 이번 주 회고 메모")
+    review_text = st.text_area("이번 주를 돌아보며 남기고 싶은 메모를 입력하세요", "")
+    st.session_state["weekly_review"] = {current_week_label: review_text}
 
 
 
 
     
-
-   
-    # st.markdown("### 🎯 이번 주 포커스 목표")
-    # focus_goals = st.multiselect("1~2개 선택하세요", goals, max_selections=2)
-
-    # st.markdown("### 🌱 루틴 항목")
-    # routine_input = st.text_area("쉼표로 구분해서 입력하세요", "식단기록, 발레, 글쓰기")
-    # routines = [r.strip() for r in routine_input.split(",") if r.strip()]
-
-    # st.markdown("### 📅 주간 시간 블록 설계")
-    # days = ["월", "화", "수", "목", "금", "토", "일"]
-    # times = ["오전", "오후", "저녁"]
-
-    # schedule = {}
-    # for day in days:
-    #     st.subheader(f"🗓 {day}")
-    #     schedule[day] = {}
-    #     for time in times:
-    #         col1, col2 = st.columns(2)
-    #         with col1:
-    #             f = st.selectbox(f"{day} {time} - 포커스", ["-"] + focus_goals, key=f"{day}-{time}-focus")
-    #         with col2:
-    #             r = st.selectbox(f"{day} {time} - 루틴", ["-"] + routines, key=f"{day}-{time}-routine")
-    #         schedule[day][time] = {"focus": f, "routine": r}
-
     st.markdown("---")
     st.markdown("### ✅ 오늘의 실행 체크리스트")
     today = st.selectbox("오늘은 무슨 요일인가요?", days)

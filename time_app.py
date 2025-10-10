@@ -385,7 +385,6 @@ if uploaded_file:
         # 최종 ‘해야할 일’은 상세 우선, 없으면 자동 제안 사용
         final_main = detail_main if detail_main else auto_main
         final_routine = detail_routine if detail_routine else auto_routine
-        final_all = final_main + final_routine
     
         rows.append({
             "요일": d,
@@ -394,7 +393,6 @@ if uploaded_file:
             "자동 제안(루틴)": " | ".join(auto_routine) if auto_routine else "-",
             "상세 플랜(메인)": " | ".join(detail_main) if detail_main else "-",
             "상세 플랜(루틴)": " | ".join(detail_routine) if detail_routine else "-",
-            "해야할 일": " | ".join(final_all) if final_all else "-"
         })
     
     week_df = pd.DataFrame(rows)

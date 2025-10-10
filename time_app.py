@@ -368,27 +368,33 @@ if uploaded_file:
     
     st.markdown("---")
     st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")
-    st.markdown("---")    
+    st.markdown("---")        
     rows = []
     for i, d in enumerate(DAYS_KR):
         date_str = f"{week_dates[i].month}/{week_dates[i].day}" if week_dates else "-"
-        # 사용자가 입력한 상세 플랜(한 줄에 한 항목)
-        user_items = st.session_state.day_detail[selected_week_key].get(d, [])
-        # 자동 제안 블록
+    
+        # 자동 제안(메인/루틴 분리)
         auto_items = default_blocks.get(d, []) if isinstance(default_blocks, dict) else []
+        auto_main = [x for x in auto_items if not x.startswith("루틴:")]
+        auto_routine = [x for x in auto_items if x.startswith("루틴:")]
     
-        # 새 컬럼들: '자동 제안', '상세 플랜'
-        auto_col = " | ".join(auto_items) if auto_items else "-"
-        detail_col = " | ".join(user_items) if user_items else "-"
+        # 상세 플랜(메인/루틴)
+        detail_main = st.session_state.day_detail[selected_week_key][d]["main"]
+        detail_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
     
-        # 최종 '해야할 일'은 상세 플랜이 있으면 그걸 우선, 없으면 자동 제안 사용
-        final_items = user_items if user_items else auto_items
+        # 최종 ‘해야할 일’은 상세 우선, 없으면 자동 제안 사용
+        final_main = detail_main if detail_main else auto_main
+        final_routine = detail_routine if detail_routine else auto_routine
+        final_all = final_main + final_routine
     
         rows.append({
             "요일": d,
             "날짜": date_str,
-            "자동 제안": auto_col,
-            "상세 플랜": detail_col,         # 👈 새로 파서 넣는 컬럼
+            "자동 제안(메인)": " | ".join(auto_main) if auto_main else "-",
+            "자동 제안(루틴)": " | ".join(auto_routine) if auto_routine else "-",
+            "상세 플랜(메인)": " | ".join(detail_main) if detail_main else "-",
+            "상세 플랜(루틴)": " | ".join(detail_routine) if detail_routine else "-",
+            "해야할 일": " | ".join(final_all) if final_all else "-"
         })
     
     week_df = pd.DataFrame(rows)
@@ -402,9 +408,43 @@ if uploaded_file:
         file_name=f"week_plan_{selected_week_key}.csv",
         mime="text/csv"
     )
+
+    # rows = []
+    # for i, d in enumerate(DAYS_KR):
+    #     date_str = f"{week_dates[i].month}/{week_dates[i].day}" if week_dates else "-"
+    #     # 사용자가 입력한 상세 플랜(한 줄에 한 항목)
+    #     user_items = st.session_state.day_detail[selected_week_key].get(d, [])
+    #     # 자동 제안 블록
+    #     auto_items = default_blocks.get(d, []) if isinstance(default_blocks, dict) else []
+    
+    #     # 새 컬럼들: '자동 제안', '상세 플랜'
+    #     auto_col = " | ".join(auto_items) if auto_items else "-"
+    #     detail_col = " | ".join(user_items) if user_items else "-"
+    
+    #     # 최종 '해야할 일'은 상세 플랜이 있으면 그걸 우선, 없으면 자동 제안 사용
+    #     final_items = user_items if user_items else auto_items
+    
+    #     rows.append({
+    #         "요일": d,
+    #         "날짜": date_str,
+    #         "자동 제안": auto_col,
+    #         "상세 플랜": detail_col,         # 👈 새로 파서 넣는 컬럼
+    #     })
+    
+    # week_df = pd.DataFrame(rows)
+    # st.dataframe(week_df, use_container_width=True)
+    
+    # # (선택) CSV 다운로드
+    # csv = week_df.to_csv(index=False).encode("utf-8-sig")
+    # st.download_button(
+    #     "📥 이 주 계획 CSV 다운로드",
+    #     data=csv,
+    #     file_name=f"week_plan_{selected_week_key}.csv",
+    #     mime="text/csv"
+    # )
     
 
-    # ---
+    # # ---
     st.markdown("### ✅ 오늘의 실행 체크리스트")
     
     today_tasks = []

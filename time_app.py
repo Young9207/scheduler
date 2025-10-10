@@ -187,6 +187,70 @@ if uploaded_file:
         plan = {"focus": [], "routine": []}
     
     # --- 오늘의 실행 블록 ---
+    # ---테스트1---
+    # 요일 정의 (월~일)
+    DAYS = ["월", "화", "수", "목", "금", "토", "일"]
+    
+    # 메인을 3개의 데일리 유닛으로 분해하는 템플릿(원하면 텍스트 수정 가능)
+    UNIT_TEMPLATES = [
+        "Step 1: 리서치/구조 설계",
+        "Step 2: 제작/초안",
+        "Step 3: 정리/공유"
+    ]
+    
+    st.markdown("### 🗓 메인 2개를 3단위로 쪼개서 요일에 교차 배치")
+    st.caption("각 주차에서 선택된 메인(최대 2개)을 자동으로 3단계로 쪼개고, 월→일 순서로 A1, B1, A2, B2, A3, B3 형태로 배치합니다.")
+    
+    weekly_daily_rows = []
+    
+    for label, key in weeks.items():
+        # 주차별 메인 1~2개 가져오기
+        mains = st.session_state.weekly_plan.get(key, {}).get("focus", [])[:2]
+    
+        # 메인이 없으면 스킵
+        if not mains:
+            for d in DAYS:
+                weekly_daily_rows.append({"주차": label, "요일": d, "일일 블록": "-"})
+            continue
+    
+        # 각 메인을 3단계 유닛으로 확장
+        subblocks_by_main = {}
+        for main in mains:
+            subblocks_by_main[main] = [f"{main} - {u}" for u in UNIT_TEMPLATES]
+    
+        # 교차 순서 큐 만들기: A1, B1, A2, B2, A3, B3
+        queue = []
+        # i는 유닛 인덱스(0..2), m은 메인 순회(A, B)
+        for i in range(3):
+            for main in mains:
+                queue.append(subblocks_by_main[main][i])
+    
+        # 요일별로 하나씩 채워넣기
+        day_plan = {d: [] for d in DAYS}
+        qi = 0
+        for d in DAYS:
+            if qi < len(queue):
+                day_plan[d].append(queue[qi])
+                qi += 1
+            else:
+                # 남은 날엔 비워두거나, 여기서 루틴/버퍼 등을 자동으로 넣어도 됨
+                pass
+    
+        # 결과 행 생성
+        for d in DAYS:
+            weekly_daily_rows.append({
+                "주차": label,
+                "요일": d,
+                "일일 블록": " | ".join(day_plan[d]) if day_plan[d] else "-"
+            })
+    
+    daily_df = pd.DataFrame(weekly_daily_rows)
+    st.dataframe(daily_df, use_container_width=True)
+
+
+
+
+    # ---
     st.markdown("### ✅ 오늘의 실행 체크리스트")
     
     today_tasks = []
@@ -212,35 +276,3 @@ if uploaded_file:
     review_text = st.text_area("이번 주를 돌아보며 남기고 싶은 메모를 입력하세요", "")
     st.session_state["weekly_review"] = {current_week_label: review_text}
 
-
-
-
-    
-    st.markdown("---")
-    st.markdown("### ✅ 오늘의 실행 체크리스트")
-    today = st.selectbox("오늘은 무슨 요일인가요?", days)
-    today_tasks = []
-    for time in times:
-        block = schedule.get(today, {}).get(time, {})
-        if block.get("focus") and block["focus"] != "-":
-            today_tasks.append(f"[포커스] {block['focus']} ({time})")
-        if block.get("routine") and block["routine"] != "-":
-            today_tasks.append(f"[루틴] {block['routine']} ({time})")
-
-    completed = []
-    for task in today_tasks:
-        if st.checkbox(task):
-            completed.append(task)
-
-    if today_tasks:
-        percent = int(len(completed) / len(today_tasks) * 100)
-        st.progress(percent)
-        st.write(f"📊 오늘의 달성률: **{percent}%**")
-    else:
-        st.info("오늘 할 일이 아직 배정되지 않았습니다.")
-
-    st.markdown("### 📝 이번 주 회고 메모")
-    st.text_area("이번 주를 돌아보며 남기고 싶은 메모를 입력하세요", "")
-
-else:
-    st.warning("엑셀 파일을 먼저 업로드해주세요.")

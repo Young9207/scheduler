@@ -53,8 +53,8 @@ if uploaded_file:
     weekly_plan = {}
     
     for label, key in weeks.items():
-    st.subheader(f"🗓 {label}")
-    col1, col2 = st.columns(2)
+        st.subheader(f"🗓 {label}")
+        col1, col2 = st.columns(2)
     
     with col1:
         focus = st.multiselect(

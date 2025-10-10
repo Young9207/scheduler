@@ -141,7 +141,7 @@ if uploaded_file:
             st.markdown(f"**📌 {label}**")
         with c2:
             focus = st.multiselect(
-                "메인 포커스 (1~2개)",
+                "메인 포커스 (1-2개)",
                 options=all_goals,
                 max_selections=2,
                 key=f"{key}_focus"

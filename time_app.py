@@ -410,146 +410,270 @@ if uploaded_file:
         st.info("모든 ‘최대선’이 최소 1회 이상 포커스로 배정되었습니다. 👍")
     
     # ========= 새로 추가: "제안 미리보기" DF + 다운로드 =========
-    def _normalize_text(s: str) -> str:
-        import unicodedata, re
-        s = unicodedata.normalize("NFKC", str(s)).strip()
-        s = re.sub(r"\s+", " ", s)
-        return s
-    
-    def _snapshot_weekly_plan(plan_dict):
-        """깊은 복사 스냅샷 (focus/routine만)"""
-        snap = {}
-        for wk, v in plan_dict.items():
-            snap[wk] = {
-                "focus": list(v.get("focus", [])),
-                "routine": list(v.get("routine", [])),
-            }
-        return snap
-    
-    def _apply_suggestions(suggestions, swaps, weekly_plan, month_goals):
-        """제안 반영: 빈 주엔 추가, 과밀 주는 routine→focus 승격(2개 제한 유지)"""
-        applied = []
-        # 빈 주 포커스 슬롯에 추가
-        for wk, gid in suggestions:
-            label = month_goals[gid]["label"]
-            plan = weekly_plan.get(wk, {"focus": [], "routine": []})
-            if label not in plan["focus"] and len(plan["focus"]) < 2:
-                plan["focus"].append(label)
-                applied.append(("add", wk, label, "빈 슬롯에 최대선 배치"))
-            weekly_plan[wk] = plan
-        # 과밀 주 승격
-        for wk, gid in swaps:
-            label = month_goals[gid]["label"]
-            plan = weekly_plan.get(wk, {"focus": [], "routine": []})
-            # routine에서 제거 후 focus로 승격
-            before_len = len(plan["focus"])
-            plan["routine"] = [x for x in plan.get("routine", []) if _normalize_text(x) != gid]
-            if label not in plan["focus"]:
-                plan["focus"].append(label)
-                # 2개 제한 유지: 넘치면 가장 최근 것 기준으로 2개만 남김
-                if len(plan["focus"]) > 2:
-                    # 정책: 가장 마지막 2개만 유지(원하면 커스텀)
-                    dropped = plan["focus"][:-2]
-                    plan["focus"] = plan["focus"][-2:]
-                    # 드롭된 항목 기록
-                    for dlab in dropped:
-                        applied.append(("drop", wk, dlab, "과밀 조정(2개 제한)"))
-                applied.append(("promote", wk, label, "routine→focus 승격"))
-            weekly_plan[wk] = plan
-        return applied
-    
-    # --- 제안 미리보기 DF ---
-    preview_rows = []
-    for wk, gid in cov_res["suggestions"]:
-        preview_rows.append({
+    # ====== 원본 유지: 제안만 적용한 '가상 계획' 생성/표시/다운로드 ======
+
+st.markdown("#### 👀 제안 미리보기")
+preview_rows = []
+for wk, gid in cov_res["suggestions"]:
+    preview_rows.append({"주차": wk, "조치": "add", "대상": month_goals[gid]["label"], "설명": "빈 슬롯에 최대선 배치"})
+for wk, gid in cov_res["swaps"]:
+    preview_rows.append({"주차": wk, "조치": "promote", "대상": month_goals[gid]["label"], "설명": "과밀 주 routine→focus 승격"})
+
+if preview_rows:
+    suggest_df = pd.DataFrame(preview_rows)
+    st.dataframe(suggest_df, use_container_width=True)
+    st.download_button(
+        "📥 제안 미리보기 CSV", suggest_df.to_csv(index=False).encode("utf-8-sig"),
+        file_name="suggestions_preview.csv", mime="text/csv", key="dl_suggest_preview"
+    )
+else:
+    st.caption("현재 자동 제안 없음.")
+
+# ---------- 핵심: 원본을 복사해 '가상 계획'만 생성 ----------
+def _normalize_text(s: str) -> str:
+    import unicodedata, re
+    s = unicodedata.normalize("NFKC", str(s)).strip()
+    s = re.sub(r"\s+", " ", s)
+    return s
+
+def _snapshot_weekly_plan(plan_dict):
+    snap = {}
+    for wk, v in plan_dict.items():
+        snap[wk] = {"focus": list(v.get("focus", [])), "routine": list(v.get("routine", []))}
+    return snap
+
+def _build_virtual_plan(base_plan, suggestions, swaps, month_goals):
+    """원본은 그대로 두고, 제안을 적용한 가상 계획과 로그를 반환"""
+    virtual = _snapshot_weekly_plan(base_plan)  # 깊은 복사
+    applied = []
+
+    # 1) 빈 슬롯 add
+    for wk, gid in suggestions:
+        label = month_goals[gid]["label"]
+        plan = virtual.get(wk, {"focus": [], "routine": []})
+        if label not in plan["focus"] and len(plan["focus"]) < 2:
+            plan["focus"].append(label)
+            applied.append(("add", wk, label, "빈 슬롯에 최대선 배치"))
+        virtual[wk] = plan
+
+    # 2) routine→focus 승격 (2개 제한 유지, 넘치면 앞쪽 것을 잘라 2개만)
+    for wk, gid in swaps:
+        label = month_goals[gid]["label"]
+        plan = virtual.get(wk, {"focus": [], "routine": []})
+        plan["routine"] = [x for x in plan.get("routine", []) if _normalize_text(x) != gid]
+        if label not in plan["focus"]:
+            plan["focus"].append(label)
+            if len(plan["focus"]) > 2:
+                # 정책: 가장 최근 2개만 유지
+                dropped = plan["focus"][:-2]
+                plan["focus"] = plan["focus"][-2:]
+                for dlab in dropped:
+                    applied.append(("drop", wk, dlab, "과밀 조정(2개 제한)"))
+            applied.append(("promote", wk, label, "routine→focus 승격"))
+        virtual[wk] = plan
+
+    return virtual, applied
+
+# ---------- 버튼: 가상 계획 만들기(원본 불변) ----------
+st.markdown("#### ✅ 제안 반영 시뮬레이션 (원본은 변경되지 않음)")
+
+if st.button("제안 반영한 '가상 계획' 생성"):
+    original = _snapshot_weekly_plan(st.session_state.weekly_plan)
+    virtual_plan, applied_log = _build_virtual_plan(original, cov_res["suggestions"], cov_res["swaps"], month_goals)
+
+    # 주차별 diff
+    diff_rows = []
+    for wk in weeks.values():
+        b_focus = set(original.get(wk, {}).get("focus", []))
+        a_focus = set(virtual_plan.get(wk, {}).get("focus", []))
+        added = sorted(list(a_focus - b_focus))
+        removed = sorted(list(b_focus - a_focus))
+        diff_rows.append({
             "주차": wk,
-            "조치": "add",
-            "대상": month_goals[gid]["label"],
-            "설명": "빈 슬롯에 최대선 배치"
+            "추가된 포커스": " | ".join(added) if added else "-",
+            "제거된 포커스(가상)": " | ".join(removed) if removed else "-",
+            "가상 계획 포커스": " | ".join(virtual_plan.get(wk, {}).get("focus", [])) if virtual_plan.get(wk) else "-",
+            "가상 계획 루틴":  " | ".join(virtual_plan.get(wk, {}).get("routine", [])) if virtual_plan.get(wk) else "-",
         })
-    for wk, gid in cov_res["swaps"]:
-        preview_rows.append({
-            "주차": wk,
-            "조치": "promote",
-            "대상": month_goals[gid]["label"],
-            "설명": "과밀 주 routine→focus 승격"
+    diff_df = pd.DataFrame(diff_rows)
+
+    st.success("가상 계획이 생성되었습니다. (원래 계획은 그대로입니다)")
+    st.markdown("##### 🔁 반영 결과(diff, 원본 vs. 가상)")
+    st.dataframe(diff_df, use_container_width=True)
+    st.download_button(
+        "📥 반영 결과(diff) CSV", diff_df.to_csv(index=False).encode("utf-8-sig"),
+        file_name="weekly_plan_virtual_diff.csv", mime="text/csv", key="dl_virtual_diff"
+    )
+
+    # 가상 계획 전체 표(주차별 포커스/루틴)
+    st.markdown("##### 🗂 가상 계획(제안 반영본) 일람")
+    plan_rows = []
+    for label, wk in weeks.items():
+        v = virtual_plan.get(wk, {"focus": [], "routine": []})
+        plan_rows.append({
+            "주차": label,
+            "포커스(가상)": " | ".join(v.get("focus", [])) or "-",
+            "루틴(가상)":  " | ".join(v.get("routine", [])) or "-",
         })
-    
-    st.markdown("#### 👀 제안 미리보기")
-    if preview_rows:
-        suggest_df = pd.DataFrame(preview_rows)
-        st.dataframe(suggest_df, use_container_width=True)
-        csv_preview = suggest_df.to_csv(index=False).encode("utf-8-sig")
+    virtual_df = pd.DataFrame(plan_rows)
+    st.dataframe(virtual_df, use_container_width=True)
+    st.download_button(
+        "📥 가상 계획 CSV", virtual_df.to_csv(index=False).encode("utf-8-sig"),
+        file_name="weekly_plan_virtual.csv", mime="text/csv", key="dl_virtual_plan"
+    )
+
+    # 적용 로그도 제공
+    if applied_log:
+        log_df = pd.DataFrame(applied_log, columns=["action","week_key","label","note"])
+        st.markdown("##### 🧾 가상 적용 로그")
+        st.dataframe(log_df, use_container_width=True)
         st.download_button(
-            "📥 제안 미리보기 CSV 다운로드",
-            data=csv_preview,
-            file_name="suggestions_preview.csv",
-            mime="text/csv",
-            key="dl_suggest_preview"
+            "📥 가상 적용 로그 CSV", log_df.to_csv(index=False).encode("utf-8-sig"),
+            file_name="virtual_applied_actions_log.csv", mime="text/csv", key="dl_virtual_log"
         )
     else:
-        st.caption("현재 자동 배치/승격 제안이 없습니다.")
+        st.caption("실행된 가상 조치가 없습니다.")
+
+    # def _normalize_text(s: str) -> str:
+    #     import unicodedata, re
+    #     s = unicodedata.normalize("NFKC", str(s)).strip()
+    #     s = re.sub(r"\s+", " ", s)
+    #     return s
     
-    # ========= 새로 추가: "자동 반영" 후 diff 결과표 + 다운로드 =========
-    st.markdown("#### ✅ 제안 자동 반영")
+    # def _snapshot_weekly_plan(plan_dict):
+    #     """깊은 복사 스냅샷 (focus/routine만)"""
+    #     snap = {}
+    #     for wk, v in plan_dict.items():
+    #         snap[wk] = {
+    #             "focus": list(v.get("focus", [])),
+    #             "routine": list(v.get("routine", [])),
+    #         }
+    #     return snap
     
-    if st.button("제안 자동 반영 실행"):
-        # 1) 반영 전 스냅샷
-        before = _snapshot_weekly_plan(st.session_state.weekly_plan)
+    # def _apply_suggestions(suggestions, swaps, weekly_plan, month_goals):
+    #     """제안 반영: 빈 주엔 추가, 과밀 주는 routine→focus 승격(2개 제한 유지)"""
+    #     applied = []
+    #     # 빈 주 포커스 슬롯에 추가
+    #     for wk, gid in suggestions:
+    #         label = month_goals[gid]["label"]
+    #         plan = weekly_plan.get(wk, {"focus": [], "routine": []})
+    #         if label not in plan["focus"] and len(plan["focus"]) < 2:
+    #             plan["focus"].append(label)
+    #             applied.append(("add", wk, label, "빈 슬롯에 최대선 배치"))
+    #         weekly_plan[wk] = plan
+    #     # 과밀 주 승격
+    #     for wk, gid in swaps:
+    #         label = month_goals[gid]["label"]
+    #         plan = weekly_plan.get(wk, {"focus": [], "routine": []})
+    #         # routine에서 제거 후 focus로 승격
+    #         before_len = len(plan["focus"])
+    #         plan["routine"] = [x for x in plan.get("routine", []) if _normalize_text(x) != gid]
+    #         if label not in plan["focus"]:
+    #             plan["focus"].append(label)
+    #             # 2개 제한 유지: 넘치면 가장 최근 것 기준으로 2개만 남김
+    #             if len(plan["focus"]) > 2:
+    #                 # 정책: 가장 마지막 2개만 유지(원하면 커스텀)
+    #                 dropped = plan["focus"][:-2]
+    #                 plan["focus"] = plan["focus"][-2:]
+    #                 # 드롭된 항목 기록
+    #                 for dlab in dropped:
+    #                     applied.append(("drop", wk, dlab, "과밀 조정(2개 제한)"))
+    #             applied.append(("promote", wk, label, "routine→focus 승격"))
+    #         weekly_plan[wk] = plan
+    #     return applied
     
-        # 2) 반영 실행
-        applied_log = _apply_suggestions(
-            cov_res["suggestions"], cov_res["swaps"],
-            st.session_state.weekly_plan, month_goals
-        )
+    # # --- 제안 미리보기 DF ---
+    # preview_rows = []
+    # for wk, gid in cov_res["suggestions"]:
+    #     preview_rows.append({
+    #         "주차": wk,
+    #         "조치": "add",
+    #         "대상": month_goals[gid]["label"],
+    #         "설명": "빈 슬롯에 최대선 배치"
+    #     })
+    # for wk, gid in cov_res["swaps"]:
+    #     preview_rows.append({
+    #         "주차": wk,
+    #         "조치": "promote",
+    #         "대상": month_goals[gid]["label"],
+    #         "설명": "과밀 주 routine→focus 승격"
+    #     })
     
-        # 3) 반영 후 스냅샷
-        after = _snapshot_weekly_plan(st.session_state.weekly_plan)
+    # st.markdown("#### 👀 제안 미리보기")
+    # if preview_rows:
+    #     suggest_df = pd.DataFrame(preview_rows)
+    #     st.dataframe(suggest_df, use_container_width=True)
+    #     csv_preview = suggest_df.to_csv(index=False).encode("utf-8-sig")
+    #     st.download_button(
+    #         "📥 제안 미리보기 CSV 다운로드",
+    #         data=csv_preview,
+    #         file_name="suggestions_preview.csv",
+    #         mime="text/csv",
+    #         key="dl_suggest_preview"
+    #     )
+    # else:
+    #     st.caption("현재 자동 배치/승격 제안이 없습니다.")
     
-        # 4) 주차별 diff 계산
-        diff_rows = []
-        for wk in weeks.values():
-            b_focus = set(before.get(wk, {}).get("focus", []))
-            a_focus = set(after.get(wk, {}).get("focus", []))
-            added = sorted(list(a_focus - b_focus))
-            removed = sorted(list(b_focus - a_focus))
-            diff_rows.append({
-                "주차": wk,
-                "추가된 포커스": " | ".join(added) if added else "-",
-                "제거된 포커스": " | ".join(removed) if removed else "-",
-                "반영 후 포커스": " | ".join(after.get(wk, {}).get("focus", [])) if after.get(wk) else "-"
-            })
+    # # ========= 새로 추가: "자동 반영" 후 diff 결과표 + 다운로드 =========
+    # st.markdown("#### ✅ 제안 자동 반영")
     
-        diff_df = pd.DataFrame(diff_rows)
+    # if st.button("제안 자동 반영 실행"):
+    #     # 1) 반영 전 스냅샷
+    #     before = _snapshot_weekly_plan(st.session_state.weekly_plan)
     
-        st.success("제안을 주간 계획에 반영했어요. 아래 ‘반영 결과’에서 변경 내역을 확인하세요.")
-        st.markdown("##### 🔁 반영 결과 (주차별 변경 내역)")
-        st.dataframe(diff_df, use_container_width=True)
+    #     # 2) 반영 실행
+    #     applied_log = _apply_suggestions(
+    #         cov_res["suggestions"], cov_res["swaps"],
+    #         st.session_state.weekly_plan, month_goals
+    #     )
     
-        csv_diff = diff_df.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(
-            "📥 반영 결과(diff) CSV 다운로드",
-            data=csv_diff,
-            file_name="weekly_plan_diff.csv",
-            mime="text/csv",
-            key="dl_diff"
-        )
+    #     # 3) 반영 후 스냅샷
+    #     after = _snapshot_weekly_plan(st.session_state.weekly_plan)
     
-        # 5) 어떤 조치가 실행되었는지 로그도 표로 제공
-        if applied_log:
-            log_df = pd.DataFrame(applied_log, columns=["action","week_key","label","note"])
-            st.markdown("##### 🧾 적용된 세부 조치 로그")
-            st.dataframe(log_df, use_container_width=True)
-            csv_log = log_df.to_csv(index=False).encode("utf-8-sig")
-            st.download_button(
-                "📥 적용 로그 CSV 다운로드",
-                data=csv_log,
-                file_name="applied_actions_log.csv",
-                mime="text/csv",
-                key="dl_log"
-            )
-        else:
-            st.caption("실행된 조치가 없습니다.")
+    #     # 4) 주차별 diff 계산
+    #     diff_rows = []
+    #     for wk in weeks.values():
+    #         b_focus = set(before.get(wk, {}).get("focus", []))
+    #         a_focus = set(after.get(wk, {}).get("focus", []))
+    #         added = sorted(list(a_focus - b_focus))
+    #         removed = sorted(list(b_focus - a_focus))
+    #         diff_rows.append({
+    #             "주차": wk,
+    #             "추가된 포커스": " | ".join(added) if added else "-",
+    #             "제거된 포커스": " | ".join(removed) if removed else "-",
+    #             "반영 후 포커스": " | ".join(after.get(wk, {}).get("focus", [])) if after.get(wk) else "-"
+    #         })
+    
+    #     diff_df = pd.DataFrame(diff_rows)
+    
+    #     st.success("제안을 주간 계획에 반영했어요. 아래 ‘반영 결과’에서 변경 내역을 확인하세요.")
+    #     st.markdown("##### 🔁 반영 결과 (주차별 변경 내역)")
+    #     st.dataframe(diff_df, use_container_width=True)
+    
+    #     csv_diff = diff_df.to_csv(index=False).encode("utf-8-sig")
+    #     st.download_button(
+    #         "📥 반영 결과(diff) CSV 다운로드",
+    #         data=csv_diff,
+    #         file_name="weekly_plan_diff.csv",
+    #         mime="text/csv",
+    #         key="dl_diff"
+    #     )
+    
+    #     # 5) 어떤 조치가 실행되었는지 로그도 표로 제공
+    #     if applied_log:
+    #         log_df = pd.DataFrame(applied_log, columns=["action","week_key","label","note"])
+    #         st.markdown("##### 🧾 적용된 세부 조치 로그")
+    #         st.dataframe(log_df, use_container_width=True)
+    #         csv_log = log_df.to_csv(index=False).encode("utf-8-sig")
+    #         st.download_button(
+    #             "📥 적용 로그 CSV 다운로드",
+    #             data=csv_log,
+    #             file_name="applied_actions_log.csv",
+    #             mime="text/csv",
+    #             key="dl_log"
+    #         )
+    #     else:
+    #         st.caption("실행된 조치가 없습니다.")
 
 
 

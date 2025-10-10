@@ -805,9 +805,9 @@ if uploaded_file:
             if auto_main or auto_routine:
                 st.caption("🔹 자동 제안")
                 if auto_main:
-                    st.write("- 메인: " + " | ".join(auto_main))
+                    st.write("- " + " | ".join(auto_main))
                 if auto_routine:
-                    st.write("- 배경: " + " | ".join(auto_routine))
+                    st.write("- : " + " | ".join(auto_routine))
     
             # ✏️ 상세 플랜(메인/배경) 두 칸
             st.caption("✏️ 오늘 상세 플랜")

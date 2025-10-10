@@ -776,37 +776,25 @@ if uploaded_file:
     # --- ‘빈 플랜 박스’(상세 계획) + 자동 제안 블록 병기 ---
     # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
     # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
+    # --- 상세 플랜 저장 구조 초기화 ---
     if "day_detail" not in st.session_state:
         st.session_state.day_detail = {}
-    if selected_week_key not in st.session_state.day_detail:
-        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
-    else:
-        # 과거 구조(리스트) 사용하던 경우도 안전하게 변환
-        for d in DAYS_KR:
-            val = st.session_state.day_detail[selected_week_key].get(d, {"main": [], "routine": []})
-            if isinstance(val, list):
-                st.session_state.day_detail[selected_week_key][d] = {"main": val, "routine": []}
-            else:
-                st.session_state.day_detail[selected_week_key][d] = {
-                    "main": val.get("main", []),
-                    "routine": val.get("routine", [])
-                }
     
-    # --- ✅ 주차별 CSV 업로드 옵션 ---
-    st.markdown(f"### 📎 {selected_week_key} 주차 플랜 CSV 업로드")
-    with st.expander("이 주차에 CSV로 상세 플랜 불러오기", expanded=False):
+    # --- ✅ 주차 선택 여부와 관계없이 CSV 업로드 가능 ---
+    st.markdown("### 📎 CSV로 상세 플랜 불러오기 (주차 선택 전에도 가능)")
+    with st.expander("CSV 업로드 옵션 열기", expanded=False):
         apply_mode = st.radio(
             "적용 방식",
-            ["비어있지 않은 값만 덮어쓰기", "완전 덮어쓰기(해당 요일 메인/루틴 전부 교체)"],
+            ["비어있지 않은 값만 덮어쓰기", "완전 덮어쓰기(메인/루틴 전부 교체)"],
             index=0,
             horizontal=True,
-            key=f"apply_mode::{selected_week_key}"
+            key="apply_mode_global"
         )
     
         uploaded_csv = st.file_uploader(
-            f"CSV 파일 업로드 (utf-8-sig, 예: week_plan_{selected_week_key}.csv)",
+            "CSV 파일 업로드 (utf-8-sig, 예: week_plan_*.csv)",
             type=["csv"],
-            key=f"csv_upload::{selected_week_key}"
+            key="csv_upload_global"
         )
     
         def _parse_pipe_or_lines(s: str):
@@ -825,7 +813,7 @@ if uploaded_file:
                     parts = [s.strip()]
             return [x for x in parts if x]
     
-        if uploaded_csv is not None and st.button("🪄 이 주차 CSV 적용", key=f"apply_csv::{selected_week_key}"):
+        if uploaded_csv is not None and st.button("🪄 CSV 불러오기 적용", key="apply_csv_global"):
             import pandas as pd
             try:
                 uploaded_csv.seek(0)
@@ -852,6 +840,11 @@ if uploaded_file:
                             "routine": _parse_pipe_or_lines(routine_raw),
                         }
     
+                    # 주차 키가 선택되어 있지 않아도 임시로 global_week 키로 저장
+                    active_week = selected_week_key if 'selected_week_key' in locals() and selected_week_key else "global_week"
+                    if active_week not in st.session_state.day_detail:
+                        st.session_state.day_detail[active_week] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+    
                     updated_count = 0
                     for d in DAYS_KR:
                         if d not in csv_map:
@@ -860,18 +853,18 @@ if uploaded_file:
                         new_routine = csv_map[d]["routine"]
     
                         if apply_mode.startswith("완전 덮어쓰기"):
-                            st.session_state.day_detail[selected_week_key][d]["main"] = new_main
-                            st.session_state.day_detail[selected_week_key][d]["routine"] = new_routine
+                            st.session_state.day_detail[active_week][d]["main"] = new_main
+                            st.session_state.day_detail[active_week][d]["routine"] = new_routine
                             updated_count += 1
                         else:
                             if new_main:
-                                st.session_state.day_detail[selected_week_key][d]["main"] = new_main
+                                st.session_state.day_detail[active_week][d]["main"] = new_main
                             if new_routine:
-                                st.session_state.day_detail[selected_week_key][d]["routine"] = new_routine
+                                st.session_state.day_detail[active_week][d]["routine"] = new_routine
                             if new_main or new_routine:
                                 updated_count += 1
     
-                    st.success(f"✅ {selected_week_key} 주차 CSV 적용 완료 — {updated_count}개 요일이 갱신되었습니다.")
+                    st.success(f"✅ CSV 적용 완료 — {updated_count}개 요일의 상세 플랜이 갱신되었습니다.")
             except Exception as e:
                 st.error(f"CSV 처리 중 오류: {e}")
 

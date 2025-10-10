@@ -272,36 +272,99 @@ if uploaded_file:
     default_blocks = auto_place_blocks(main_a, main_b, routines)
     
     # --- ‘빈 플랜 박스’(상세 계획) + 자동 제안 블록 병기 ---
+    # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
     if "day_detail" not in st.session_state:
         st.session_state.day_detail = {}
     if selected_week_key not in st.session_state.day_detail:
-        st.session_state.day_detail[selected_week_key] = {d: [] for d in DAYS_KR}
-
+        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+    else:
+        # 과거 구조(리스트) 사용하던 경우도 안전하게 변환
+        for d in DAYS_KR:
+            val = st.session_state.day_detail[selected_week_key].get(d, {"main": [], "routine": []})
+            if isinstance(val, list):
+                st.session_state.day_detail[selected_week_key][d] = {"main": val, "routine": []}
+            else:
+                st.session_state.day_detail[selected_week_key][d] = {
+                    "main": val.get("main", []),
+                    "routine": val.get("routine", [])
+                }
+    
     cols = st.columns(7)
     for i, d in enumerate(DAYS_KR):
         with cols[i]:
             date_tag = f" ({week_dates[i].month}/{week_dates[i].day})" if week_dates else ""
             st.markdown(f"**{d}{date_tag}**")
     
-            # 자동 제안 블록(읽기용)
-            if default_blocks[d]:
-                st.caption("🔹 자동 제안")
-                for item in default_blocks[d]:
-                    st.write(f"- {item}")
+            # 자동 제안 → 메인/루틴 분리해서 보여주기
+            auto_items = default_blocks.get(d, []) if isinstance(default_blocks, dict) else []
+            auto_main = [x for x in auto_items if not x.startswith("루틴:")]
+            auto_routine = [x for x in auto_items if x.startswith("루틴:")]
     
-            # 네가 직접 적는 ‘빈 플랜 박스’ (이게 요약표의 ‘해야할 일’로 반영됨)
-            st.caption("✏️ 오늘 상세 플랜 (한 줄에 한 항목)")
-            current_detail = st.session_state.day_detail[selected_week_key].get(d, [])
-            new_text = st.text_area(
-                label="",
-                value="\n".join(current_detail),
-                key=f"detail::{selected_week_key}::{d}",
-                height=140,
-                placeholder="햄보칸 하루"
-            )
-            st.session_state.day_detail[selected_week_key][d] = [
-                line.strip() for line in new_text.splitlines() if line.strip()
+            if auto_main or auto_routine:
+                st.caption("🔹 자동 제안")
+                if auto_main:
+                    st.write("- 메인: " + " | ".join(auto_main))
+                if auto_routine:
+                    st.write("- 루틴: " + " | ".join(auto_routine))
+    
+            # ✏️ 상세 플랜(메인/루틴) 두 칸
+            st.caption("✏️ 오늘 상세 플랜")
+            c_main, c_routine = st.columns(2)
+    
+            # 현재 값 불러오기
+            cur_main = st.session_state.day_detail[selected_week_key][d]["main"]
+            cur_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
+    
+            with c_main:
+                main_text = st.text_area(
+                    "메인", value="\n".join(cur_main),
+                    key=f"detail::{selected_week_key}::{d}::main",
+                    height=120, placeholder="메인 관련 상세 계획 (한 줄에 한 항목)"
+                )
+            with c_routine:
+                routine_text = st.text_area(
+                    "루틴", value="\n".join(cur_routine),
+                    key=f"detail::{selected_week_key}::{d}::routine",
+                    height=120, placeholder="루틴 관련 상세 계획 (한 줄에 한 항목)"
+                )
+    
+            st.session_state.day_detail[selected_week_key][d]["main"] = [
+                t.strip() for t in main_text.splitlines() if t.strip()
             ]
+            st.session_state.day_detail[selected_week_key][d]["routine"] = [
+                t.strip() for t in routine_text.splitlines() if t.strip()
+            ]
+
+    # if "day_detail" not in st.session_state:
+    #     st.session_state.day_detail = {}
+    # if selected_week_key not in st.session_state.day_detail:
+    #     st.session_state.day_detail[selected_week_key] = {d: [] for d in DAYS_KR}
+
+    # cols = st.columns(7)
+    # for i, d in enumerate(DAYS_KR):
+    #     with cols[i]:
+    #         date_tag = f" ({week_dates[i].month}/{week_dates[i].day})" if week_dates else ""
+    #         st.markdown(f"**{d}{date_tag}**")
+    
+    #         # 자동 제안 블록(읽기용)
+    #         if default_blocks[d]:
+    #             st.caption("🔹 자동 제안")
+    #             for item in default_blocks[d]:
+    #                 st.write(f"- {item}")
+    
+    #         # 네가 직접 적는 ‘빈 플랜 박스’ (이게 요약표의 ‘해야할 일’로 반영됨)
+    #         st.caption("✏️ 오늘 상세 플랜 (한 줄에 한 항목)")
+    #         current_detail = st.session_state.day_detail[selected_week_key].get(d, [])
+    #         new_text = st.text_area(
+    #             label="",
+    #             value="\n".join(current_detail),
+    #             key=f"detail::{selected_week_key}::{d}",
+    #             height=140,
+    #             placeholder="햄보칸 하루"
+    #         )
+    #         st.session_state.day_detail[selected_week_key][d] = [
+    #             line.strip() for line in new_text.splitlines() if line.strip()
+    #         ]
     
     st.markdown("---")
     st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")

@@ -21,7 +21,7 @@ if uploaded_file:
 
     ######    
     # 시트 불러오기
-    df = pd.read_excel(file_path, sheet_name="최대선_최소선")
+    df = pd.read_excel(uploaded_file, sheet_name="최대선_최소선")
     df = df[["프로젝트", "월", "최소선", "최대선", "측정지표"]].dropna(subset=["월"])
     
     # Streamlit 설정

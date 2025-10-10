@@ -457,7 +457,91 @@ if uploaded_file:
     
     st.markdown("---")
     st.markdown("### ✅ 오늘의 실행 체크리스트")
+
+    # --- CSV로 상세 플랜 불러오기/덮어쓰기 옵션 ---
+    st.markdown("#### 📎 CSV에서 상세 플랜 불러오기")
+    with st.expander("CSV 적용 옵션 열기", expanded=False):
+        apply_mode = st.radio(
+            "적용 방식",
+            ["비어있지 않은 값만 덮어쓰기", "완전 덮어쓰기(해당 요일 메인/루틴 전부 교체)"],
+            index=0,
+            horizontal=True,
+        )
+        uploaded_csv = st.file_uploader("이 주 계획 CSV 업로드 (이전에 다운로드한 포맷 권장, utf-8-sig)", type=["csv"])
     
+        def _parse_pipe_or_lines(s: str):
+            if not s:
+                return []
+            s = str(s)
+            # 다운로드 포맷: "a | b | c" 형태 → 우선 '|' 기준, 대안으로 줄바꿈/콤마도 허용
+            if "|" in s:
+                parts = [x.strip() for x in s.split("|")]
+            else:
+                parts = []
+                for sep in ["\n", ","]:
+                    if sep in s:
+                        parts = [x.strip() for x in s.split(sep)]
+                        break
+                if not parts:  # 구분자 없음 → 단일 항목
+                    parts = [s.strip()]
+            return [x for x in parts if x]
+    
+        if uploaded_csv is not None and st.button("🪄 CSV 적용"):
+            try:
+                import pandas as pd
+                uploaded_csv.seek(0)
+                try:
+                    df = pd.read_csv(uploaded_csv, encoding="utf-8-sig")
+                except UnicodeDecodeError:
+                    uploaded_csv.seek(0)
+                    df = pd.read_csv(uploaded_csv, encoding="utf-8")
+    
+                # 필요한 컬럼 확인 (우리는 '요일', '상세 플랜(메인)', '상세 플랜(루틴)'만 사용)
+                if "요일" not in df.columns:
+                    st.warning("CSV에 '요일' 컬럼이 없습니다. 기존 다운로드한 포맷을 사용해 주세요.")
+                else:
+                    df = df.fillna("")
+                    df["요일"] = df["요일"].astype(str).str.strip()
+    
+                    # 요일 → (main, routine) 매핑 생성
+                    csv_map = {}
+                    for _, row in df.iterrows():
+                        day = str(row.get("요일", "")).strip()
+                        if not day:
+                            continue
+                        main_raw = row.get("상세 플랜(메인)", "")
+                        routine_raw = row.get("상세 플랜(루틴)", "")
+                        csv_map[day] = {
+                            "main": _parse_pipe_or_lines(main_raw),
+                            "routine": _parse_pipe_or_lines(routine_raw),
+                        }
+    
+                    # 세션 상태에 반영
+                    updated_count = 0
+                    for d in DAYS_KR:
+                        if d not in csv_map:
+                            continue
+                        new_main = csv_map[d]["main"]
+                        new_routine = csv_map[d]["routine"]
+    
+                        if apply_mode.startswith("완전 덮어쓰기"):
+                            st.session_state.day_detail[selected_week_key][d]["main"] = new_main
+                            st.session_state.day_detail[selected_week_key][d]["routine"] = new_routine
+                            updated_count += 1
+                        else:
+                            # 비어있지 않은 값만 덮어쓰기
+                            if new_main:
+                                st.session_state.day_detail[selected_week_key][d]["main"] = new_main
+                            if new_routine:
+                                st.session_state.day_detail[selected_week_key][d]["routine"] = new_routine
+                            if new_main or new_routine:
+                                updated_count += 1
+    
+                    st.success(f"CSV 적용 완료! {updated_count}개 요일의 상세 플랜이 갱신되었습니다.")
+            except Exception as e:
+                st.error(f"CSV 처리 중 오류가 발생했습니다: {e}")
+
+  
     # 1) 오늘 날짜/요일 자동 인식 + 필요시 수동 변경
     today = datetime.date.today()
     today_idx_auto = today.weekday()  # 0=월 ... 6=일

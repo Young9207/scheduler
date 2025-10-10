@@ -775,6 +775,7 @@ if uploaded_file:
     
     # --- ‘빈 플랜 박스’(상세 계획) + 자동 제안 블록 병기 ---
     # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
+    # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
     if "day_detail" not in st.session_state:
         st.session_state.day_detail = {}
     if selected_week_key not in st.session_state.day_detail:
@@ -791,51 +792,152 @@ if uploaded_file:
                     "routine": val.get("routine", [])
                 }
     
-    cols = st.columns(7)
-    for i, d in enumerate(DAYS_KR):
-        with cols[i]:
-            date_tag = f" ({week_dates[i].month}/{week_dates[i].day})" if week_dates else ""
-            st.markdown(f"**{d}{date_tag}**")
+    # --- ✅ 주차별 CSV 업로드 옵션 ---
+    st.markdown(f"### 📎 {selected_week_key} 주차 플랜 CSV 업로드")
+    with st.expander("이 주차에 CSV로 상세 플랜 불러오기", expanded=False):
+        apply_mode = st.radio(
+            "적용 방식",
+            ["비어있지 않은 값만 덮어쓰기", "완전 덮어쓰기(해당 요일 메인/루틴 전부 교체)"],
+            index=0,
+            horizontal=True,
+            key=f"apply_mode::{selected_week_key}"
+        )
     
-            # 자동 제안 → 메인/배경 분리해서 보여주기
-            auto_items = default_blocks.get(d, []) if isinstance(default_blocks, dict) else []
-            auto_main = [x for x in auto_items if not x.startswith("배경:")]
-            auto_routine = [x for x in auto_items if x.startswith("배경:")]
+        uploaded_csv = st.file_uploader(
+            f"CSV 파일 업로드 (utf-8-sig, 예: week_plan_{selected_week_key}.csv)",
+            type=["csv"],
+            key=f"csv_upload::{selected_week_key}"
+        )
     
-            if auto_main or auto_routine:
-                st.caption("🔹 자동 제안")
-                if auto_main:
-                    st.write("- " + " | ".join(auto_main))
-                if auto_routine:
-                    st.write("- " + " | ".join(auto_routine))
+        def _parse_pipe_or_lines(s: str):
+            if not s:
+                return []
+            s = str(s)
+            if "|" in s:
+                parts = [x.strip() for x in s.split("|")]
+            else:
+                parts = []
+                for sep in ["\n", ","]:
+                    if sep in s:
+                        parts = [x.strip() for x in s.split(sep)]
+                        break
+                if not parts:
+                    parts = [s.strip()]
+            return [x for x in parts if x]
     
-            # ✏️ 상세 플랜(메인/배경) 두 칸
-            st.caption("✏️ 오늘 상세 플랜")
-            c_main, c_routine = st.columns(2)
+        if uploaded_csv is not None and st.button("🪄 이 주차 CSV 적용", key=f"apply_csv::{selected_week_key}"):
+            import pandas as pd
+            try:
+                uploaded_csv.seek(0)
+                try:
+                    df = pd.read_csv(uploaded_csv, encoding="utf-8-sig")
+                except UnicodeDecodeError:
+                    uploaded_csv.seek(0)
+                    df = pd.read_csv(uploaded_csv, encoding="utf-8")
     
-            # 현재 값 불러오기
-            cur_main = st.session_state.day_detail[selected_week_key][d]["main"]
-            cur_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
+                if "요일" not in df.columns:
+                    st.warning("CSV에 '요일' 컬럼이 없습니다. 다운로드한 형식을 사용해주세요.")
+                else:
+                    df = df.fillna("")
+                    df["요일"] = df["요일"].astype(str).str.strip()
+                    csv_map = {}
+                    for _, row in df.iterrows():
+                        day = str(row.get("요일", "")).strip()
+                        if not day:
+                            continue
+                        main_raw = row.get("상세 플랜(메인)", "")
+                        routine_raw = row.get("상세 플랜(루틴)", "")
+                        csv_map[day] = {
+                            "main": _parse_pipe_or_lines(main_raw),
+                            "routine": _parse_pipe_or_lines(routine_raw),
+                        }
     
-            with c_main:
-                main_text = st.text_area(
-                    "메인", value="\n".join(cur_main),
-                    key=f"detail::{selected_week_key}::{d}::main",
-                    height=120, placeholder="메인 관련 상세 계획 (한 줄에 한 항목)"
-                )
-            with c_routine:
-                routine_text = st.text_area(
-                    "배경", value="\n".join(cur_routine),
-                    key=f"detail::{selected_week_key}::{d}::routine",
-                    height=120, placeholder="배경 관련 상세 계획 (한 줄에 한 항목)"
-                )
+                    updated_count = 0
+                    for d in DAYS_KR:
+                        if d not in csv_map:
+                            continue
+                        new_main = csv_map[d]["main"]
+                        new_routine = csv_map[d]["routine"]
     
-            st.session_state.day_detail[selected_week_key][d]["main"] = [
-                t.strip() for t in main_text.splitlines() if t.strip()
-            ]
-            st.session_state.day_detail[selected_week_key][d]["routine"] = [
-                t.strip() for t in routine_text.splitlines() if t.strip()
-            ]
+                        if apply_mode.startswith("완전 덮어쓰기"):
+                            st.session_state.day_detail[selected_week_key][d]["main"] = new_main
+                            st.session_state.day_detail[selected_week_key][d]["routine"] = new_routine
+                            updated_count += 1
+                        else:
+                            if new_main:
+                                st.session_state.day_detail[selected_week_key][d]["main"] = new_main
+                            if new_routine:
+                                st.session_state.day_detail[selected_week_key][d]["routine"] = new_routine
+                            if new_main or new_routine:
+                                updated_count += 1
+    
+                    st.success(f"✅ {selected_week_key} 주차 CSV 적용 완료 — {updated_count}개 요일이 갱신되었습니다.")
+            except Exception as e:
+                st.error(f"CSV 처리 중 오류: {e}")
+
+
+    
+    # if "day_detail" not in st.session_state:
+    #     st.session_state.day_detail = {}
+    # if selected_week_key not in st.session_state.day_detail:
+    #     st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+    # else:
+    #     # 과거 구조(리스트) 사용하던 경우도 안전하게 변환
+    #     for d in DAYS_KR:
+    #         val = st.session_state.day_detail[selected_week_key].get(d, {"main": [], "routine": []})
+    #         if isinstance(val, list):
+    #             st.session_state.day_detail[selected_week_key][d] = {"main": val, "routine": []}
+    #         else:
+    #             st.session_state.day_detail[selected_week_key][d] = {
+    #                 "main": val.get("main", []),
+    #                 "routine": val.get("routine", [])
+    #             }
+    
+    # cols = st.columns(7)
+    # for i, d in enumerate(DAYS_KR):
+    #     with cols[i]:
+    #         date_tag = f" ({week_dates[i].month}/{week_dates[i].day})" if week_dates else ""
+    #         st.markdown(f"**{d}{date_tag}**")
+    
+    #         # 자동 제안 → 메인/배경 분리해서 보여주기
+    #         auto_items = default_blocks.get(d, []) if isinstance(default_blocks, dict) else []
+    #         auto_main = [x for x in auto_items if not x.startswith("배경:")]
+    #         auto_routine = [x for x in auto_items if x.startswith("배경:")]
+    
+    #         if auto_main or auto_routine:
+    #             st.caption("🔹 자동 제안")
+    #             if auto_main:
+    #                 st.write("- " + " | ".join(auto_main))
+    #             if auto_routine:
+    #                 st.write("- " + " | ".join(auto_routine))
+    
+    #         # ✏️ 상세 플랜(메인/배경) 두 칸
+    #         st.caption("✏️ 오늘 상세 플랜")
+    #         c_main, c_routine = st.columns(2)
+    
+    #         # 현재 값 불러오기
+    #         cur_main = st.session_state.day_detail[selected_week_key][d]["main"]
+    #         cur_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
+    
+    #         with c_main:
+    #             main_text = st.text_area(
+    #                 "메인", value="\n".join(cur_main),
+    #                 key=f"detail::{selected_week_key}::{d}::main",
+    #                 height=120, placeholder="메인 관련 상세 계획 (한 줄에 한 항목)"
+    #             )
+    #         with c_routine:
+    #             routine_text = st.text_area(
+    #                 "배경", value="\n".join(cur_routine),
+    #                 key=f"detail::{selected_week_key}::{d}::routine",
+    #                 height=120, placeholder="배경 관련 상세 계획 (한 줄에 한 항목)"
+    #             )
+    
+    #         st.session_state.day_detail[selected_week_key][d]["main"] = [
+    #             t.strip() for t in main_text.splitlines() if t.strip()
+    #         ]
+    #         st.session_state.day_detail[selected_week_key][d]["routine"] = [
+    #             t.strip() for t in routine_text.splitlines() if t.strip()
+    #         ]
 
     st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")
     st.markdown("---")        

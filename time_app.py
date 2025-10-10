@@ -206,9 +206,9 @@ if uploaded_file:
         end = datetime.date(year, em, ed)
         days = [start + datetime.timedelta(days=i) for i in range((end - start).days + 1)]
         # 길이가 7이 아닐 수 있어도 표시 맞춤
-        while len(days) < 6:
+        while len(days) < 7:
             days.append(days[-1] + datetime.timedelta(days=1))
-        return days[:6]
+        return days[:7]
     
     week_dates = parse_week_dates(selected_week_label)
     
@@ -277,7 +277,7 @@ if uploaded_file:
     if selected_week_key not in st.session_state.day_detail:
         st.session_state.day_detail[selected_week_key] = {d: [] for d in DAYS_KR}
 
-    cols = st.columns(6)
+    cols = st.columns(7)
     for i, d in enumerate(DAYS_KR):
         with cols[i]:
             date_tag = f" ({week_dates[i].month}/{week_dates[i].day})" if week_dates else ""

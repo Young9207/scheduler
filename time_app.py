@@ -13,12 +13,12 @@ from collections import defaultdict
 STATE_FILE = Path("state_storage.json")
 STATE_KEYS = ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]
 
-def ensure_session_keys():
-    for key in ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]:
-        if key not in st.session_state:
-            st.session_state[key] = {}
+# def ensure_session_keys():
+#     for key in ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]:
+#         if key not in st.session_state:
+#             st.session_state[key] = {}
 
-ensure_session_keys()
+# ensure_session_keys()
 
 
 def _parse_pipe_or_lines(s: str):
@@ -292,7 +292,7 @@ st.title("🧠 주간 시간관리 웹앱")
 st.markdown("분기/월 목표에서 이번 주의 메인 목표를 선택하고, 실행 배경을 설계하세요.")
 
 # --- [NEW] 주간 계획표 업로드 (엑셀 없이도 가능) ---
-st.markdown("### 📦 이미 뽑아둔 주간 계획표 불러오기")
+st.markdown("### 📦 이미 뽑아둔 weekly 계획표 불러오기")
 
 if "day_detail" not in st.session_state:
     st.session_state.day_detail = {}
@@ -339,28 +339,28 @@ if uploaded_week_csv is not None:
     except Exception as e:
         st.error(f"CSV 처리 오류: {e}")
 
-    # ✅ 업로드한 주간 계획표를 이 주 요약표와 자동 연결
-if uploaded_week_csv is not None:
-    try:
-        week_key = st.session_state.get("selected_week_key_auto", None)
-        if not week_key:
-            match = re.search(r"week\d+", uploaded_week_csv.name)
-            week_key = match.group(0) if match else "week_manual"
-            st.session_state["selected_week_key_auto"] = week_key
+#     # ✅ 업로드한 주간 계획표를 이 주 요약표와 자동 연결
+# if uploaded_week_csv is not None:
+#     try:
+#         week_key = st.session_state.get("selected_week_key_auto", None)
+#         if not week_key:
+#             match = re.search(r"week\d+", uploaded_week_csv.name)
+#             week_key = match.group(0) if match else "week_manual"
+#             st.session_state["selected_week_key_auto"] = week_key
 
-        # 요약표 갱신용 초기화
-        if "default_blocks" not in st.session_state:
-            st.session_state.default_blocks = {}
-        st.session_state.default_blocks[week_key] = _build_default_blocks_from_weekplan(week_key)
+#         # 요약표 갱신용 초기화
+#         if "default_blocks" not in st.session_state:
+#             st.session_state.default_blocks = {}
+#         st.session_state.default_blocks[week_key] = _build_default_blocks_from_weekplan(week_key)
 
-        st.success(f"✅ '{week_key}' 주간 계획을 요약표와 자동 연결했어요!")
+#         st.success(f"✅ '{week_key}' 주간 계획을 요약표와 자동 연결했어요!")
 
-    except Exception as e:
-        st.warning(f"요약표 자동 연결 중 오류: {e}")
+#     except Exception as e:
+#         st.warning(f"요약표 자동 연결 중 오류: {e}")
 
 # --- 주차 플랜 CSV 업로드: weekly_plan 갱신 (가상/원본 포맷 모두 지원) ---
 # --- 주차 플랜 CSV 업로드: weekly_plan 갱신 + 즉시 미리보기 (가상/원본 모두 지원) ---
-st.markdown("### 📦 주차 플랜 CSV 업로드 (가상/원본 둘 다 지원)")
+st.markdown("### 📦 montly-weekly 플랜 CSV 업로드 (가상/원본 둘 다 지원)")
 
 uploaded_plan_csv = st.file_uploader(
     "📥 주차 플랜 CSV 업로드 (예: weekly_plan_virtual.csv)",
@@ -444,27 +444,27 @@ if uploaded_plan_csv is not None:
                     st.session_state["selected_week_key_auto"] = auto_week_key
 
                 st.success(f"✅ 주차 플랜 적용 완료! ({updated_rows}개 주차 갱신)")
-                st.caption(f"활성 주차 키: {st.session_state.get('selected_week_key_auto', '-')}")
+                # st.caption(f"활성 주차 키: {st.session_state.get('selected_week_key_auto', '-')}")
 
                 # ✅ 주차 플랜을 요일별 상세(day_detail)로 자동 확장
-                if "weekly_plan" in st.session_state and st.session_state.weekly_plan:
-                    DAYS_KR = ["월","화","수","목","금","토","일"]
-                    for week_key, plan in st.session_state.weekly_plan.items():
-                        if week_key not in st.session_state.day_detail:
-                            st.session_state.day_detail[week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
-                        mains = plan.get("focus", [])[:2]
-                        routines = plan.get("routine", [])
-                        default_blocks = _build_default_blocks_from_weekplan(week_key)
-                        for d in DAYS_KR:
-                            # 메인/루틴 비어 있으면 기본 블록으로 채움
-                            auto_items = default_blocks.get(d, [])
-                            main_items = [x for x in auto_items if not x.startswith("배경:")]
-                            routine_items = [x for x in auto_items if x.startswith("배경:")]
-                            if not st.session_state.day_detail[week_key][d]["main"]:
-                                st.session_state.day_detail[week_key][d]["main"] = main_items
-                            if not st.session_state.day_detail[week_key][d]["routine"]:
-                                st.session_state.day_detail[week_key][d]["routine"] = routine_items
-                    st.success("✅ 주차 플랜을 요일별 상세 계획(day_detail)로 자동 확장했습니다!")
+                # if "weekly_plan" in st.session_state and st.session_state.weekly_plan:
+                #     DAYS_KR = ["월","화","수","목","금","토","일"]
+                #     for week_key, plan in st.session_state.weekly_plan.items():
+                #         if week_key not in st.session_state.day_detail:
+                #             st.session_state.day_detail[week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+                #         mains = plan.get("focus", [])[:2]
+                #         routines = plan.get("routine", [])
+                #         default_blocks = _build_default_blocks_from_weekplan(week_key)
+                #         for d in DAYS_KR:
+                #             # 메인/루틴 비어 있으면 기본 블록으로 채움
+                #             auto_items = default_blocks.get(d, [])
+                #             main_items = [x for x in auto_items if not x.startswith("배경:")]
+                #             routine_items = [x for x in auto_items if x.startswith("배경:")]
+                #             if not st.session_state.day_detail[week_key][d]["main"]:
+                #                 st.session_state.day_detail[week_key][d]["main"] = main_items
+                #             if not st.session_state.day_detail[week_key][d]["routine"]:
+                #                 st.session_state.day_detail[week_key][d]["routine"] = routine_items
+                #     st.success("✅ 주차 플랜을 요일별 상세 계획(day_detail)로 자동 확장했습니다!")
                             
     
     except Exception as e:

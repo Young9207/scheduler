@@ -975,17 +975,7 @@ else:
     DAYS_KR = ["월","화","수","목","금","토","일"]
     rows = []
     
-    selected_week_key = (
-        st.session_state.get("selected_week_key_auto")
-        or locals().get("selected_week_key")
-        or "week_manual"
-    )
-    
-    if "day_detail" not in st.session_state:
-        st.session_state.day_detail = {}
-    if selected_week_key not in st.session_state.day_detail:
-        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
-    
+    # 안전하게 weeks 구조 확보
     if "week_dates" not in locals() or not week_dates:
         today = datetime.date.today()
         week_dates = [today + datetime.timedelta(days=i) for i in range(7)]
@@ -994,19 +984,22 @@ else:
     
     for i, d in enumerate(DAYS_KR):
         date_str = f"{week_dates[i].month}/{week_dates[i].day}"
-        auto_items = default_blocks.get(d, [])
-        auto_main = [x for x in auto_items if not x.startswith("배경:")]
-        auto_routine = [x for x in auto_items if x.startswith("배경:")]
         detail_main = st.session_state.day_detail[selected_week_key][d]["main"]
         detail_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
-        final_main = detail_main if detail_main else auto_main
-        final_routine = detail_routine if detail_routine else auto_routine
+    
+        # 기본 제안 블록이 비었을 경우 주간 계획에서 자동 생성
+        if not detail_main and not detail_routine:
+            auto_items = default_blocks.get(d, [])
+            detail_main = [x for x in auto_items if not x.startswith("배경:")]
+            detail_routine = [x for x in auto_items if x.startswith("배경:")]
+    
         rows.append({
             "요일": d,
             "날짜": date_str,
             "상세 플랜(메인)": " | ".join(detail_main) if detail_main else "-",
             "상세 플랜(배경)": " | ".join(detail_routine) if detail_routine else "-",
         })
+                    
     
     week_df = pd.DataFrame(rows)
     st.dataframe(week_df, use_container_width=True)

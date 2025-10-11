@@ -275,15 +275,6 @@ def generate_calendar_weeks(year: int, month: int):
 month_map = {"1월": 1, "2월": 2, "3월": 3, "4월": 4, "5월": 5, "6월": 6,
               "7월": 7, "8월": 8, "9월": 9, "10월": 10, "11월": 11, "12월": 12}
 
-# --- 세션 기본 구조 보장 ---
-if "weekly_plan" not in st.session_state:
-    st.session_state.weekly_plan = {}
-if "day_detail" not in st.session_state:
-    st.session_state.day_detail = {}
-if "completed_by_day" not in st.session_state:
-    st.session_state.completed_by_day = {}
-if "weekly_review" not in st.session_state:
-    st.session_state.weekly_review = {}
 
 
 today_date = datetime.date.today()

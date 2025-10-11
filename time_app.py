@@ -669,6 +669,15 @@ if "weeks" not in locals() or not isinstance(weeks, dict) or len(weeks) == 0:
 
 #--------테스트    
 current_week_label = find_current_week_label(weeks)
+# --- 세션 기본 구조 보장 ---
+if "weekly_plan" not in st.session_state:
+    st.session_state.weekly_plan = {}
+if "day_detail" not in st.session_state:
+    st.session_state.day_detail = {}
+if "completed_by_day" not in st.session_state:
+    st.session_state.completed_by_day = {}
+if "weekly_review" not in st.session_state:
+    st.session_state.weekly_review = {}
 
 if current_week_label:
     st.markdown(f"### 📅 이번 주: **{current_week_label}**")

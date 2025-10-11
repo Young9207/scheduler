@@ -693,37 +693,37 @@ if uploaded_file:
 
 
 
-# # 엑셀 업로드가 없어도 weeks 보장
-# if "weeks" not in locals() or not isinstance(weeks, dict) or len(weeks) == 0:
-#     _today = datetime.date.today()
-#     weeks = generate_calendar_weeks(_today.year, _today.month)
+# 엑셀 업로드가 없어도 weeks 보장
+if "weeks" not in locals() or not isinstance(weeks, dict) or len(weeks) == 0:
+    _today = datetime.date.today()
+    weeks = generate_calendar_weeks(_today.year, _today.month)
 
-# #--------테스트    
-# current_week_label = find_current_week_label(weeks)
+#--------테스트    
+current_week_label = find_current_week_label(weeks)
 
-# if "weekly_plan" not in st.session_state:
-#     st.session_state.weekly_plan = {}   # ✅ 추가
+if "weekly_plan" not in st.session_state:
+    st.session_state.weekly_plan = {}   # ✅ 추가
 
 
-# # --- 세션 키 보장 ---
-# if "weekly_plan" not in st.session_state:
-#     st.session_state.weekly_plan = {}
-# if "day_detail" not in st.session_state:
-#     st.session_state.day_detail = {}
-# if "default_blocks" not in st.session_state:
-#     st.session_state.default_blocks = {}
+# --- 세션 키 보장 ---
+if "weekly_plan" not in st.session_state:
+    st.session_state.weekly_plan = {}
+if "day_detail" not in st.session_state:
+    st.session_state.day_detail = {}
+if "default_blocks" not in st.session_state:
+    st.session_state.default_blocks = {}
 
-# # --- 현재 활성 주차 키 결정 (CSV 업로드, 자동 탐색, 수동 선택 중 우선순위 적용) ---
-# selected_week_key = (
-#     st.session_state.get("selected_week_key_auto")   # CSV 업로드 시 자동 주차 키
-#     or locals().get("current_week_key")              # 오늘 날짜 기준 주차
-#     or "week_manual"
-# )
+# --- 현재 활성 주차 키 결정 (CSV 업로드, 자동 탐색, 수동 선택 중 우선순위 적용) ---
+selected_week_key = (
+    st.session_state.get("selected_week_key_auto")   # CSV 업로드 시 자동 주차 키
+    or locals().get("current_week_key")              # 오늘 날짜 기준 주차
+    or "week_manual"
+)
 
-# if "day_detail" not in st.session_state:
-#     st.session_state.day_detail = {}
-# if selected_week_key not in st.session_state.day_detail:
-#     st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in ["월","화","수","목","금","토","일"]}
+if "day_detail" not in st.session_state:
+    st.session_state.day_detail = {}
+if selected_week_key not in st.session_state.day_detail:
+    st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in ["월","화","수","목","금","토","일"]}
 
 
 
@@ -913,83 +913,83 @@ else:
             st.error(f"CSV 처리 오류: {e}")
     
     
-    # --- ✅ 주차 선택 여부와 관계없이 CSV 추가 업로드/덮어쓰기 가능 ---
-    st.markdown("### 📎 CSV로 상세 플랜 불러오기 (주차 선택 전에도 가능)")
-    with st.expander("CSV 업로드 옵션 열기", expanded=False):
-        apply_mode = st.radio(
-            "적용 방식",
-            ["비어있지 않은 값만 덮어쓰기", "완전 덮어쓰기(메인/루틴 전부 교체)"],
-            index=0,
-            horizontal=True,
-            key="apply_mode_global"
-        )
+    # # --- ✅ 주차 선택 여부와 관계없이 CSV 추가 업로드/덮어쓰기 가능 ---
+    # st.markdown("### 📎 CSV로 상세 플랜 불러오기 (주차 선택 전에도 가능)")
+    # with st.expander("CSV 업로드 옵션 열기", expanded=False):
+    #     apply_mode = st.radio(
+    #         "적용 방식",
+    #         ["비어있지 않은 값만 덮어쓰기", "완전 덮어쓰기(메인/루틴 전부 교체)"],
+    #         index=0,
+    #         horizontal=True,
+    #         key="apply_mode_global"
+    #     )
     
-        uploaded_csv = st.file_uploader(
-            "CSV 파일 업로드 (utf-8-sig, 예: week_plan_*.csv)",
-            type=["csv"],
-            key="csv_upload_global"
-        )
+    #     uploaded_csv = st.file_uploader(
+    #         "CSV 파일 업로드 (utf-8-sig, 예: week_plan_*.csv)",
+    #         type=["csv"],
+    #         key="csv_upload_global"
+    #     )
     
-        if uploaded_csv is not None and st.button("🪄 CSV 불러오기 적용", key="apply_csv_global"):
-            try:
-                uploaded_csv.seek(0)
-                try:
-                    df = pd.read_csv(uploaded_csv, encoding="utf-8-sig")
-                except UnicodeDecodeError:
-                    uploaded_csv.seek(0)
-                    df = pd.read_csv(uploaded_csv, encoding="utf-8")
+    #     if uploaded_csv is not None and st.button("🪄 CSV 불러오기 적용", key="apply_csv_global"):
+    #         try:
+    #             uploaded_csv.seek(0)
+    #             try:
+    #                 df = pd.read_csv(uploaded_csv, encoding="utf-8-sig")
+    #             except UnicodeDecodeError:
+    #                 uploaded_csv.seek(0)
+    #                 df = pd.read_csv(uploaded_csv, encoding="utf-8")
     
-                if "요일" not in df.columns:
-                    st.warning("CSV에 '요일' 컬럼이 없습니다. 다운로드한 형식을 사용해주세요.")
-                else:
-                    df = df.fillna("")
-                    df["요일"] = df["요일"].astype(str).str.strip()
+    #             if "요일" not in df.columns:
+    #                 st.warning("CSV에 '요일' 컬럼이 없습니다. 다운로드한 형식을 사용해주세요.")
+    #             else:
+    #                 df = df.fillna("")
+    #                 df["요일"] = df["요일"].astype(str).str.strip()
     
-                    # 요일 → 값 매핑
-                    csv_map = {}
-                    for _, row in df.iterrows():
-                        day = str(row.get("요일", "")).strip()
-                        if not day:
-                            continue
-                        main_raw = row.get("상세 플랜(메인)", "")
-                        routine_raw = row.get("상세 플랜(루틴)", "")
-                        csv_map[day] = {
-                            "main": _parse_pipe_or_lines(main_raw),
-                            "routine": _parse_pipe_or_lines(routine_raw),
-                        }
+    #                 # 요일 → 값 매핑
+    #                 csv_map = {}
+    #                 for _, row in df.iterrows():
+    #                     day = str(row.get("요일", "")).strip()
+    #                     if not day:
+    #                         continue
+    #                     main_raw = row.get("상세 플랜(메인)", "")
+    #                     routine_raw = row.get("상세 플랜(루틴)", "")
+    #                     csv_map[day] = {
+    #                         "main": _parse_pipe_or_lines(main_raw),
+    #                         "routine": _parse_pipe_or_lines(routine_raw),
+    #                     }
     
-                    # 현재 선택 주차키: 업로드 주차키가 있으면 그걸 우선 사용
-                    active_week = (
-                        st.session_state.get("selected_week_key_auto")
-                        or (locals().get("selected_week_key") if "selected_week_key" in locals() else None)
-                        or "global_week"
-                    )
-                    if active_week not in st.session_state.day_detail:
-                        st.session_state.day_detail[active_week] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+    #                 # 현재 선택 주차키: 업로드 주차키가 있으면 그걸 우선 사용
+    #                 active_week = (
+    #                     st.session_state.get("selected_week_key_auto")
+    #                     or (locals().get("selected_week_key") if "selected_week_key" in locals() else None)
+    #                     or "global_week"
+    #                 )
+    #                 if active_week not in st.session_state.day_detail:
+    #                     st.session_state.day_detail[active_week] = {d: {"main": [], "routine": []} for d in DAYS_KR}
     
-                    updated_count = 0
-                    for d in DAYS_KR:
-                        if d not in csv_map:
-                            continue
-                        new_main = csv_map[d]["main"]
-                        new_routine = csv_map[d]["routine"]
+    #                 updated_count = 0
+    #                 for d in DAYS_KR:
+    #                     if d not in csv_map:
+    #                         continue
+    #                     new_main = csv_map[d]["main"]
+    #                     new_routine = csv_map[d]["routine"]
     
-                        if apply_mode.startswith("완전 덮어쓰기"):
-                            st.session_state.day_detail[active_week][d]["main"] = new_main
-                            st.session_state.day_detail[active_week][d]["routine"] = new_routine
-                            updated_count += 1
-                        else:
-                            if new_main:
-                                st.session_state.day_detail[active_week][d]["main"] = new_main
-                            if new_routine:
-                                st.session_state.day_detail[active_week][d]["routine"] = new_routine
-                            if new_main or new_routine:
-                                updated_count += 1
+    #                     if apply_mode.startswith("완전 덮어쓰기"):
+    #                         st.session_state.day_detail[active_week][d]["main"] = new_main
+    #                         st.session_state.day_detail[active_week][d]["routine"] = new_routine
+    #                         updated_count += 1
+    #                     else:
+    #                         if new_main:
+    #                             st.session_state.day_detail[active_week][d]["main"] = new_main
+    #                         if new_routine:
+    #                             st.session_state.day_detail[active_week][d]["routine"] = new_routine
+    #                         if new_main or new_routine:
+    #                             updated_count += 1
     
-                    st.success(f"✅ CSV 적용 완료 — {updated_count}개 요일의 상세 플랜이 갱신되었습니다. (주차: {active_week})")
+    #                 st.success(f"✅ CSV 적용 완료 — {updated_count}개 요일의 상세 플랜이 갱신되었습니다. (주차: {active_week})")
     
-            except Exception as e:
-                st.error(f"CSV 처리 중 오류: {e}")
+    #         except Exception as e:
+    #             st.error(f"CSV 처리 중 오류: {e}")
 
 
     st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")

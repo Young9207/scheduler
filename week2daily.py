@@ -29,7 +29,7 @@ def _parse_pipe_or_lines(s: str):
         parts = [x.strip() for x in s.split("|")]
     else:
         parts = []
-        for sep in ["|", ","]:
+        for sep in [" ", ","]:
             if sep in s:
                 parts = [x.strip() for x in s.split(sep)]
                 break
@@ -194,6 +194,34 @@ top_html = f"""
 """
 
 st.markdown(top_html, unsafe_allow_html=True)
+
+# 상단에 현재 CSV 자체도 바로 볼/받을 수 있게 버튼 제공
+if st.session_state.get("persisted_csv"):
+    active_bytes = st.session_state.persisted_csv.get("bytes", b"")
+    cols = st.columns([4,1])
+    with cols[1]:
+        st.download_button(
+            "📥 현재 CSV 다운로드",
+            data=active_bytes,
+            file_name=active_name or "week_from_csv.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="dl_active_csv_top",
+        )
+
+with st.expander("🗂 상단 빠른 미리보기 (원본 CSV 일부)", expanded=False):
+    try:
+        import pandas as _pd
+        _preview = _pd.read_csv(io.BytesIO(st.session_state.persisted_csv["bytes"]), encoding="utf-8-sig")
+    except Exception:
+        try:
+            _preview = _pd.read_csv(io.BytesIO(st.session_state.persisted_csv["bytes"]))
+        except Exception:
+            _preview = None
+    if _preview is not None:
+        st.dataframe(_preview.head(20), use_container_width=True)
+    else:
+        st.caption("CSV 미리보기를 표시할 수 없습니다.")
 
 # ---------------------
 # Daily Checklist UI

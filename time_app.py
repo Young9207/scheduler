@@ -23,7 +23,7 @@ MONTH_MAP = {f"{i}월": i for i in range(1, 13)}
 def _build_virtual_plan(base_plan, suggestions, swaps, month_goals):
     """원본을 건드리지 않고 제안을 적용한 가상 계획을 생성"""
     import copy
-default_blocks = st.session_state.default_blocks  # alias to session state
+    default_blocks = st.session_state.default_blocks  # alias to session state
     virtual = copy.deepcopy(base_plan)
     applied = []
 

@@ -20,6 +20,40 @@ MONTH_MAP = {f"{i}월": i for i in range(1, 13)}
 # =========================
 # Utilities
 # =========================
+
+def generate_weekly_detail(selected_week_key, week_dates):
+    """메인/루틴 기반으로 주간 디테일 자동 생성"""
+    plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
+    mains = plan.get("focus", [])[:2]
+    routines = plan.get("routine", [])
+
+    main_a = mains[0] if len(mains) >= 1 else None
+    main_b = mains[1] if len(mains) >= 2 else None
+
+    detail = {}
+    for date_obj in week_dates:
+        weekday_kr = DAYS_KR[date_obj.weekday()]
+        detail[weekday_kr] = {"main": [], "routine": []}
+
+        # --- 메인 패턴 ---
+        if weekday_kr in ["월", "수", "금"] and main_a:
+            detail[weekday_kr]["main"].append(main_a)
+        if weekday_kr in ["화", "목", "금"] and main_b:
+            detail[weekday_kr]["main"].append(main_b)
+
+        # --- 배경 루틴 분배 ---
+        if routines:
+            idx = week_dates.index(date_obj) % len(routines)
+            detail[weekday_kr]["routine"].append(routines[idx])
+
+        # --- 주말 처리 ---
+        if weekday_kr == "토":
+            detail[weekday_kr]["main"].append("보완/미완료 항목 정리")
+        elif weekday_kr == "일":
+            detail[weekday_kr]["main"].append("회고 및 다음 주 준비")
+
+    return detail
+    
 def _parse_pipe_or_lines(s: str):
     if not s:
         return []
@@ -716,74 +750,42 @@ week_dates = parse_week_dates_from_label(selected_week_label)
 # ===============================
 # 📅 이 주의 상세 플랜 (날짜 기준, 표로 직접 편집)
 # ===============================
-st.markdown(f"### 🗓 {selected_week_label} — 월-일 가로 블록 + 상세 플랜")
-st.markdown("#### ✍️ 이 주의 상세 플랜 (날짜 기준, 직접 편집)")
-st.caption("이번 주 실제 날짜에 맞춰 상세 플랜을 작성하거나 수정하세요.")
+st.markdown(f"### 🗓 {selected_week_label} — 날짜 기준 상세 플랜 자동 생성")
+st.caption("메인A는 월·수·금, 메인B는 화·목·금 / 토·일은 보완·회고로 자동 배치됩니다.")
 
 # 세션 가드
 if "day_detail" not in st.session_state:
     st.session_state.day_detail = {}
-if selected_week_key not in st.session_state.day_detail:
-    st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
 
-def _join_for_cell(items):
-    return " | ".join(items) if items else ""
+# 자동 생성 버튼
+if st.button("⚙️ 이 주 상세 플랜 자동 생성", use_container_width=True):
+    st.session_state.day_detail[selected_week_key] = generate_weekly_detail(selected_week_key, week_dates)
+    st.success("✅ 주간 디테일이 자동 생성되었습니다!")
 
-days_kr = ["월", "화", "수", "목", "금", "토", "일"]
+# 표 보기
+if selected_week_key in st.session_state.day_detail:
+    detail = st.session_state.day_detail[selected_week_key]
+    rows = []
+    for i, date_obj in enumerate(week_dates):
+        weekday_kr = DAYS_KR[date_obj.weekday()]
+        date_str = date_obj.strftime("%m/%d")
+        rows.append({
+            "날짜": date_str,
+            "요일": weekday_kr,
+            "메인(자동)": " | ".join(detail[weekday_kr]["main"]) or "-",
+            "배경(자동)": " | ".join(detail[weekday_kr]["routine"]) or "-",
+        })
+    df_week_auto = pd.DataFrame(rows)
+    st.dataframe(df_week_auto, use_container_width=True)
 
-# ✅ 주간 메인 포커스 / 배경 루틴 요약 표시
-week_plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
-main_focus = " | ".join(week_plan.get("focus", [])[:2]) or "-"
-background_focus = " | ".join(week_plan.get("routine", [])[:5]) or "-"
-
-c1, c2 = st.columns(2)
-with c1:
-    st.info(f"**🎯 메인 포커스 (1–2개)**\n\n{main_focus}")
-with c2:
-    st.info(f"**🌿 배경 루틴 (최대 5개)**\n\n{background_focus}")
-
-st.divider()
-
-# ✅ 실제 날짜 기준으로 표 구성
-table_rows = []
-for date_obj in week_dates:
-    weekday_kr = days_kr[date_obj.weekday()]
-    date_str = date_obj.strftime("%m/%d")
-    cur_main = st.session_state.day_detail[selected_week_key][weekday_kr]["main"]
-    cur_routine = st.session_state.day_detail[selected_week_key][weekday_kr]["routine"]
-    table_rows.append({
-        "날짜": date_str,
-        "요일": weekday_kr,
-        "상세 플랜(메인)": _join_for_cell(cur_main),
-        "상세 플랜(배경)": _join_for_cell(cur_routine),
-    })
-
-df_edit = pd.DataFrame(table_rows, columns=["날짜", "요일", "상세 플랜(메인)", "상세 플랜(배경)"])
-
-# ✏️ 표 에디터 (날짜 순으로 보기 쉽게)
-edited = st.data_editor(
-    df_edit,
-    hide_index=True,
-    use_container_width=True,
-    num_rows="fixed",
-    key=f"editor::{selected_week_key}",
-)
-
-# ✅ 수정 내용 세션에 반영
-for _, row in edited.iterrows():
-    weekday = row["요일"]
-    st.session_state.day_detail[selected_week_key][weekday]["main"] = _parse_pipe_or_lines(row["상세 플랜(메인)"])
-    st.session_state.day_detail[selected_week_key][weekday]["routine"] = _parse_pipe_or_lines(row["상세 플랜(배경)"])
-
-# 📥 CSV 다운로드
-csv_week = edited.to_csv(index=False).encode("utf-8-sig")
-st.download_button(
-    "📥 이 주 상세 플랜 CSV 다운로드 (날짜 기준)",
-    data=csv_week,
-    file_name=f"week_detail_table_{selected_week_key}.csv",
-    mime="text/csv",
-    key=f"csv_{selected_week_key}",  # ✅ 고유 key 추가
-)
+    csv_auto = df_week_auto.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "📥 자동 생성 주간 디테일 CSV 다운로드",
+        data=csv_auto,
+        file_name=f"auto_week_detail_{selected_week_key}.csv",
+        mime="text/csv",
+        key=f"auto_csv_{selected_week_key}"
+    )
 
 
 

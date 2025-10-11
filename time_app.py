@@ -802,8 +802,9 @@ csv_week = edited.to_csv(index=False).encode("utf-8-sig")
 st.download_button(
     "📥 이 주 상세 플랜 CSV 다운로드 (날짜 기준)",
     data=csv_week,
-    file_name=f"week_detail_{selected_week_key}.csv",
+    file_name=f"week_detail_table_{selected_week_key}.csv",
     mime="text/csv",
+    key=f"csv_{selected_week_key}",  # ✅ 고유 key 추가
 )
 
 

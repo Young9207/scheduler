@@ -325,19 +325,32 @@ def _build_virtual_plan(base_plan, suggestions, swaps, month_goals):
 
     return virtual, applied
     
-def generate_calendar_weeks(year: int, month: int):
-    weeks = {}
-    first_day = datetime.date(year, month, 1)
-    last_day = datetime.date(year, month, calendar.monthrange(year, month)[1])
-    start_of_first_week = first_day - datetime.timedelta(days=first_day.weekday())
-    current_start = start_of_first_week
-    week_num = 1
-    while current_start <= last_day:
-        current_end = current_start + datetime.timedelta(days=6)
-        label = f"{week_num}주차 ({current_start.month}/{current_start.day}~{current_end.month}/{current_end.day})"
-        weeks[label] = f"week{week_num}"
-        current_start += datetime.timedelta(days=7)
-        week_num += 1
+# def generate_calendar_weeks(year: int, month: int):
+#     weeks = {}
+#     first_day = datetime.date(year, month, 1)
+#     last_day = datetime.date(year, month, calendar.monthrange(year, month)[1])
+#     start_of_first_week = first_day - datetime.timedelta(days=first_day.weekday())
+#     current_start = start_of_first_week
+#     week_num = 1
+#     while current_start <= last_day:
+#         current_end = current_start + datetime.timedelta(days=6)
+#         label = f"{week_num}주차 ({current_start.month}/{current_start.day}~{current_end.month}/{current_end.day})"
+#         weeks[label] = f"week{week_num}"
+#         current_start += datetime.timedelta(days=7)
+#         week_num += 1
+#     return weeks
+def generate_calendar_weeks(year: int, month: int, week_start: int = 0):
+    """
+    week_start: 0=월요일, 6=일요일
+    반환: 각 주에 대해 (start_date, end_date, days[list[date]]) 튜플 리스트
+    - monthdatescalendar는 해당 월을 덮는 모든 주를 반환(이웃달 날짜 포함)
+    """
+    cal = calendar.Calendar(firstweekday=week_start)
+    weeks = []
+    for week_days in cal.monthdatescalendar(year, month):
+        start = week_days[0]
+        end = week_days[-1]
+        weeks.append((start, end, week_days))
     return weeks
 
 # --- 기본 변수들 ---
@@ -515,14 +528,27 @@ if uploaded_file:
     st.markdown("### 🔍 해당 월의 목표 목록")
     st.dataframe(filtered[["프로젝트", "최대선", "최소선"]], use_container_width=True)
 
+    year = datetime.date.today().year
+    month_num = month_map[selected_month]
+    
+    # 월요일 시작(한국/유럽 관행)으로 모든 주 생성
+    weeks = generate_calendar_weeks(year, month_num, week_start=0)
     
     st.markdown(f"### 🗓 {selected_month}의 주차별 일정 ({len(weeks)}주차)")
     
-    # --- [4] 목표 데이터 파싱 ---
-    filtered = df[df["월"] == selected_month].reset_index(drop=True)
-    text_blocks = filtered["최소선"].dropna().tolist() + filtered["최대선"].dropna().tolist()
-    parsed = parse_goals("\n".join(map(str, text_blocks)))
-    all_goals = [f"{section} - {item}" for section, item in parsed]
+    # 주차 출력 예시
+    for i, (w_start, w_end, days) in enumerate(weeks, start=1):
+        # 해당 월만 강조하고 싶다면 표시만 필터링(주차 자체는 유지)
+        in_month_days = [d for d in days if d.month == month_num]
+        label = f"{i}주차 ({w_start.strftime('%m/%d')}–{w_end.strftime('%m/%d')})"
+        with st.expander(label, expanded=False):
+            st.write("해당 월 날짜:", ", ".join(d.strftime("%m/%d") for d in in_month_days))
+            # 주차별 목표/일정 매핑 로직을 여기에서 수행  
+            # --- [4] 목표 데이터 파싱 ---
+            filtered = df[df["월"] == selected_month].reset_index(drop=True)
+            text_blocks = filtered["최소선"].dropna().tolist() + filtered["최대선"].dropna().tolist()
+            parsed = parse_goals("\n".join(map(str, text_blocks)))
+            all_goals = [f"{section} - {item}" for section, item in parsed]
     
     # --- [5] 주차별 선택 UI ---
     if "weekly_plan" not in st.session_state:

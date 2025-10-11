@@ -747,9 +747,30 @@ else:
     default_blocks = {d: [] for d in DAYS_KR}
 
 # ===============================
-# ✍️ 요일별 상세 플랜 입력/수정 UI
-# (섹션: "🗓 ... — 월-일 가로 블록 + 상세 플랜" 바로 아래에 붙이세요)
+# 🌙 이번 달 주간 요약 미리보기 (상세 플랜 참고용)
 # ===============================
+if "weekly_plan" in st.session_state and len(st.session_state.weekly_plan) > 0:
+    st.markdown("### 🗂 이번 달 주간 요약 미리보기")
+
+    summary_rows = []
+    for label, wk_key in weeks.items():
+        plan = st.session_state.weekly_plan.get(wk_key, {"focus": [], "routine": []})
+        summary_rows.append({
+            "주차": label,
+            "메인 포커스": " | ".join(plan.get("focus", [])) or "-",
+            "배경": " | ".join(plan.get("routine", [])) or "-",
+        })
+    summary_df = pd.DataFrame(summary_rows)
+
+    # 이번 주 강조 표시
+    styled_summary = summary_df.style.apply(
+        lambda row: ["background-color: #fef3c7" if row["주차"] == selected_week_label else "" for _ in row],
+        axis=1
+    )
+
+    st.dataframe(styled_summary, use_container_width=True)
+else:
+    st.info("이번 달 주간 계획(포커스/배경)이 아직 없습니다. 'montly-weekly 플랜 CSV 업로드' 섹션에서 먼저 불러오세요.")
 
 # ===============================
 # 📋 이 주의 상세 플랜 (표로 직접 편집, 자동제안 사용 안 함)

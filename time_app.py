@@ -553,8 +553,15 @@ if uploaded_file:
     
     # --- (전제) 주차 선택: 해당 주만 보이도록 ---
     # weeks = {"1주차 (10/7~10/13)": "week1", ...} 가 이미 있다고 가정
-    selected_week_label = st.selectbox("📆 체크할 주 차를 선택하세요", list(weeks.keys()))
+    # 교체 후
+    options = list(weeks.keys())
+    default_index = options.index(current_week_label) if current_week_label in options else 0
+    selected_week_label = st.selectbox("📆 체크할 주 차를 선택하세요", options, index=default_index)
     selected_week_key = weeks[selected_week_label]
+    
+    # CSV 업로드가 있으면 그 주 키를 최우선으로 사용
+    selected_week_key = st.session_state.get("selected_week_key_auto", selected_week_key)
+
     
     # 주차 라벨에서 날짜 범위 파싱 (옵션)
     def parse_week_dates(week_label: str, year: int = None):
@@ -577,16 +584,35 @@ if uploaded_file:
     st.markdown(f"### 🗓 {selected_week_label} — 월-일 가로 블록 + 상세 플랜")
     
     # --- 이 주의 메인/배경 가져오기 ---
+    # 교체 후
     plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
-    mains = plan.get("focus", [])[:2]  # 메인 최대 2개
+    mains = plan.get("focus", [])[:2]
     routines = plan.get("routine", [])
     
-    if not mains:
-        st.info("이 주차에 메인이 없습니다. 먼저 ‘주차별 메인/배경’을 선택해주세요.")
-        st.stop()
+    # weekly_plan이 비어있으면 CSV(day_detail)에서 자동 추출
+    DAYS_KR = ["월","화","수","목","금","토","일"]
+    week_detail = st.session_state.day_detail.get(selected_week_key, {})
     
-    main_a = mains[0]
-    main_b = mains[1] if len(mains) > 1 else None
+    if not mains:
+        main_candidates = []
+        for d in DAYS_KR:
+            main_candidates += week_detail.get(d, {}).get("main", [])
+        seen = set()
+        mains = [x for x in main_candidates if not (x in seen or seen.add(x))][:2]
+    
+    if not routines:
+        routine_candidates = []
+        for d in DAYS_KR:
+            routine_candidates += week_detail.get(d, {}).get("routine", [])
+        seen = set()
+        routines = [x for x in routine_candidates if not (x in seen or seen.add(x))][:5]
+    
+    if not mains and not routines:
+        st.info("이 주의 메인/배경이 비어 있습니다. CSV의 요일별 상세 플랜으로만 표시합니다.")
+    
+    main_a = mains[0] if len(mains) >= 1 else None
+    main_b = mains[1] if len(mains) >= 2 else None
+
     
     # --- 자동 배치 로직 ---
     def auto_place_blocks(main_a: str, main_b: str | None, routines: list[str]):
@@ -631,7 +657,13 @@ if uploaded_file:
     
         return day_blocks
     
-    default_blocks = auto_place_blocks(main_a, main_b, routines)
+    # default_blocks = auto_place_blocks(main_a, main_b, routines)
+    # 교체 후
+    if main_a:
+        default_blocks = auto_place_blocks(main_a, main_b, routines)
+    else:
+        default_blocks = {d: [] for d in ["월","화","수","목","금","토","일"]}
+
     
     # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
     # --- 상세 플랜 저장 구조 초기화 ---

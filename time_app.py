@@ -755,7 +755,7 @@ if "weekly_plan" in st.session_state and len(st.session_state.weekly_plan) > 0:
 
     summary_rows = []
     for i, (w_start, w_end, days) in enumerate(weeks, start=1):
-        label = f"{i}주차 ({w_start.strftime('%m/%d')}~{w_end.strftime('%m/%d')})"
+        label = f"{i}주차 ({w_start.month}/{w_start.day}~{w_end.month}/{w_end.day})"
         week_key = f"week{i}"
         plan = st.session_state.weekly_plan.get(week_key, {"focus": [], "routine": []})
         summary_rows.append({
@@ -766,10 +766,12 @@ if "weekly_plan" in st.session_state and len(st.session_state.weekly_plan) > 0:
 
     summary_df = pd.DataFrame(summary_rows)
 
-    # 이번 주 강조 표시
+    # === 현재 주차 강조 (라벨 문자열 비교) ===
     def highlight_current(row):
-        if selected_week_label in row["주차"]:
-            return ["background-color: #fef3c7"] * len(row)
+        cur_label = str(selected_week_label).replace(" ", "")
+        row_label = str(row["주차"]).replace(" ", "")
+        if any(x in row_label for x in [cur_label, cur_label.replace("0", "")]):
+            return ["background-color: #fff4cc"] * len(row)
         return ["" for _ in row]
 
     st.dataframe(summary_df.style.apply(highlight_current, axis=1), use_container_width=True)

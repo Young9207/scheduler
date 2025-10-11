@@ -850,30 +850,112 @@ if uploaded_file:
     csv = week_df.to_csv(index=False).encode("utf-8-sig")
     st.download_button("📥 이 주 계획 CSV 다운로드", data=csv, file_name=f"week_plan_{selected_week_key}.csv", mime="text/csv")
     
-    # ✅ [수정③] 오늘의 실행 체크리스트 접근 안전화
+    # ------------------------------
+    # ✅ 오늘의 실행 체크리스트 (완전판: 체크박스 + 진행률 + CSV 내보내기)
+    # ------------------------------
     st.markdown("---")
     st.markdown("### ✅ 오늘의 실행 체크리스트")
     
-    today = datetime.date.today()
-    days_map = {0:"월",1:"화",2:"수",3:"목",4:"금",5:"토",6:"일"}
-    sel_day = days_map[today.weekday()]
+    # 안전 가드
+    DAYS_KR = ["월","화","수","목","금","토","일"]
+    if "day_detail" not in st.session_state:
+        st.session_state.day_detail = {}
     
+    # 어떤 주를 대상으로 할지 결정: CSV 업로드 주차 우선, 없으면 위에서 선택된 주, 마지막으로 임시키
+    selected_week_key = (
+        st.session_state.get("selected_week_key_auto") or
+        (locals().get("selected_week_key") if "selected_week_key" in locals() else None) or
+        "week_manual"
+    )
+    
+    # 해당 주차 구조 보장
     if selected_week_key not in st.session_state.day_detail:
-        st.session_state.day_detail[selected_week_key] = {day: {"main": [], "routine": []} for day in DAYS_KR}
-    if sel_day not in st.session_state.day_detail[selected_week_key]:
-        st.session_state.day_detail[selected_week_key][sel_day] = {"main": [], "routine": []}
+        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
     
+    # 오늘 요일 자동 + 수동 선택 가능
+    today = datetime.date.today()
+    today_idx_auto = today.weekday()  # 0=월 ... 6=일
+    day_options = DAYS_KR
+    sel_day = st.selectbox(
+        "🗓 오늘 요일을 선택/확인하세요",
+        day_options,
+        index=today_idx_auto if today_idx_auto < len(day_options) else 0
+    )
+    
+    # 주차 날짜 배열 확보(있으면 사용, 없으면 오늘부터 7일 fallback)
+    if "week_dates" in locals() and week_dates:
+        # 선택한 요일의 실제 날짜 문자열
+        day_idx = DAYS_KR.index(sel_day)
+        date_str = week_dates[day_idx].isoformat()
+    else:
+        date_str = today.isoformat()
+    
+    # 자동 제안 블록(주차 메인/배경 없을 때 대비)
+    auto_items = []
+    if "default_blocks" in locals() and isinstance(default_blocks, dict):
+        auto_items = default_blocks.get(sel_day, [])
+    auto_main = [x for x in auto_items if not x.startswith("배경:")]
+    auto_routine = [x for x in auto_items if x.startswith("배경:")]
+    
+    # 상세 플랜 불러오기 (CSV 업로드로 들어온 값 포함)
     detail_main = st.session_state.day_detail[selected_week_key][sel_day]["main"]
     detail_routine = st.session_state.day_detail[selected_week_key][sel_day]["routine"]
     
-    st.write(f"🗓 오늘({sel_day})의 메인: ", " | ".join(detail_main) if detail_main else "없음")
-    st.write(f"🌿 오늘의 배경: ", " | ".join(detail_routine) if detail_routine else "없음")
+    # 최종 할 일: 상세가 우선, 없으면 자동 제안 사용
+    final_main = detail_main if detail_main else auto_main
+    final_routine = detail_routine if detail_routine else auto_routine
     
-    if "state_loaded_once" not in st.session_state:
-        load_state()
-        st.session_state["state_loaded_once"] = True
+    # 체크 상태 저장소 준비 (주차 + 날짜 단위로 저장)
+    if "completed_by_day" not in st.session_state:
+        st.session_state.completed_by_day = {}  # dict[(week_key, date_str)] = set(labels)
     
-    save_state()
+    store_key = (selected_week_key, date_str)
+    if store_key not in st.session_state.completed_by_day:
+        st.session_state.completed_by_day[store_key] = set()
+    completed = st.session_state.completed_by_day[store_key]
+    
+    # 체크박스 렌더링 — [메인], [배경] 라벨 붙임
+    def _task_key(prefix, text):
+        raw = f"{selected_week_key}|{date_str}|{prefix}|{text}"
+        return "chk_" + hashlib.md5(raw.encode("utf-8")).hexdigest()
+    
+    today_tasks = []
+    today_tasks += [("[메인]", t) for t in final_main]
+    # 배경은 "배경:" 접두어 제거 후 표시
+    today_tasks += [("[배경]", t.replace("배경:", "").strip()) for t in final_routine]
+    
+    if not today_tasks:
+        st.info("오늘 체크할 항목이 없습니다. (CSV의 요일별 상세 플랜을 올리거나, 주차 자동 제안을 확인하세요.)")
+    else:
+        for kind, text in today_tasks:
+            label = f"{kind} {text}"
+            key = _task_key(kind, text)
+            default_checked = label in completed
+            checked = st.checkbox(label, value=default_checked, key=key)
+            if checked:
+                completed.add(label)
+            else:
+                completed.discard(label)
+    
+        # 진행률
+        percent = int(len(completed) / len(today_tasks) * 100) if today_tasks else 0
+        st.progress(percent)
+        st.write(f"📊 오늘의 달성률: **{percent}%** ({len(completed)} / {len(today_tasks)})")
+    
+    # 오늘 체크 내역 표/다운로드
+    with st.expander("📋 오늘 체크 내역 보기/내보내기"):
+        rows = [{"날짜": date_str, "유형": kind, "할 일": text, "완료": (f"{kind} {text}" in completed)}
+                for kind, text in today_tasks]
+        df_today = pd.DataFrame(rows)
+        st.dataframe(df_today, use_container_width=True)
+        csv_today = df_today.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            "📥 오늘 체크 내역 CSV 다운로드",
+            data=csv_today,
+            file_name=f"today_tasks_{selected_week_key}_{date_str}.csv",
+            mime="text/csv"
+        )
+
     
 #     st.markdown("---")
 #     st.markdown("### ✅ 오늘의 실행 체크리스트")

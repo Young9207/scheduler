@@ -13,6 +13,10 @@ from collections import defaultdict
 STATE_FILE = Path("state_storage.json")
 STATE_KEYS = ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]
 
+match = re.search(r"week\d+", uploaded_week_csv.name)
+week_key = match.group(0) if match else "week_manual"
+
+
 
 def _parse_pipe_or_lines(s: str):
     if not s:
@@ -649,6 +653,43 @@ if uploaded_file:
     # --- 상세 플랜 저장 구조 초기화 ---
     if "day_detail" not in st.session_state:
         st.session_state.day_detail = {}
+
+    # --- [신규 기능] 기존 week_plan CSV 자동 반영 ---
+    uploaded_week_csv = st.file_uploader("📥 기존 주간 계획표 업로드 (예: week_plan_week2-2.csv)", type=["csv"], key="weekly_restore")
+    
+    if uploaded_week_csv is not None and st.button("✅ 주간 계획표 불러와 상세 플랜 복원"):
+        import pandas as pd
+        try:
+            uploaded_week_csv.seek(0)
+            try:
+                df = pd.read_csv(uploaded_week_csv, encoding="utf-8-sig")
+            except UnicodeDecodeError:
+                uploaded_week_csv.seek(0)
+                df = pd.read_csv(uploaded_week_csv, encoding="utf-8")
+    
+            # 필수 컬럼 확인
+            if not set(["요일", "상세 플랜(메인)", "상세 플랜(배경)"]).issubset(df.columns):
+                st.warning("CSV에 필요한 컬럼(요일, 상세 플랜(메인), 상세 플랜(배경))이 없습니다.")
+            else:
+                df = df.fillna("")
+                df["요일"] = df["요일"].astype(str).str.strip()
+                week_key = Path(uploaded_week_csv.name).stem.split("_")[-1]  # 예: week_plan_week2-2.csv → 'week2-2'
+                if week_key not in st.session_state.day_detail:
+                    st.session_state.day_detail[week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+    
+                for _, row in df.iterrows():
+                    day = str(row["요일"]).strip()
+                    if not day or day not in DAYS_KR:
+                        continue
+                    main_items = _parse_pipe_or_lines(row["상세 플랜(메인)"])
+                    routine_items = _parse_pipe_or_lines(row["상세 플랜(배경)"])
+                    st.session_state.day_detail[week_key][day]["main"] = main_items
+                    st.session_state.day_detail[week_key][day]["routine"] = routine_items
+    
+                st.success(f"✅ {week_key} 주간 계획표를 성공적으로 불러왔습니다!")
+        except Exception as e:
+            st.error(f"CSV 처리 오류: {e}")
+
     
     # --- ✅ 주차 선택 여부와 관계없이 CSV 업로드 가능 ---
     st.markdown("### 📎 CSV로 상세 플랜 불러오기 (주차 선택 전에도 가능)")

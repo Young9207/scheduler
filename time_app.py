@@ -7,13 +7,29 @@ import hashlib
 import json
 from pathlib import Path
 import streamlit as st
+import unicodedata
+from collections import defaultdict
 
 STATE_FILE = Path("state_storage.json")
 STATE_KEYS = ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]
 
-import unicodedata
-from collections import defaultdict
 
+def _parse_pipe_or_lines(s: str):
+    if not s:
+        return []
+    s = str(s)
+    if "|" in s:
+        parts = [x.strip() for x in s.split("|")]
+    else:
+        parts = []
+        for sep in ["\n", ","]:
+            if sep in s:
+                parts = [x.strip() for x in s.split(sep)]
+                break
+        if not parts:
+            parts = [s.strip()]
+    return [x for x in parts if x]
+            
 def _normalize_text(s: str) -> str:
     # 공백/기호/대소문자 차이로 매칭 실패하지 않게 정규화
     s = unicodedata.normalize("NFKC", str(s)).strip()
@@ -534,150 +550,6 @@ if uploaded_file:
         else:
             st.caption("실행된 가상 조치가 없습니다.")
 
-    # def _normalize_text(s: str) -> str:
-    #     import unicodedata, re
-    #     s = unicodedata.normalize("NFKC", str(s)).strip()
-    #     s = re.sub(r"\s+", " ", s)
-    #     return s
-    
-    # def _snapshot_weekly_plan(plan_dict):
-    #     """깊은 복사 스냅샷 (focus/routine만)"""
-    #     snap = {}
-    #     for wk, v in plan_dict.items():
-    #         snap[wk] = {
-    #             "focus": list(v.get("focus", [])),
-    #             "routine": list(v.get("routine", [])),
-    #         }
-    #     return snap
-    
-    # def _apply_suggestions(suggestions, swaps, weekly_plan, month_goals):
-    #     """제안 반영: 빈 주엔 추가, 과밀 주는 routine→focus 승격(2개 제한 유지)"""
-    #     applied = []
-    #     # 빈 주 포커스 슬롯에 추가
-    #     for wk, gid in suggestions:
-    #         label = month_goals[gid]["label"]
-    #         plan = weekly_plan.get(wk, {"focus": [], "routine": []})
-    #         if label not in plan["focus"] and len(plan["focus"]) < 2:
-    #             plan["focus"].append(label)
-    #             applied.append(("add", wk, label, "빈 슬롯에 최대선 배치"))
-    #         weekly_plan[wk] = plan
-    #     # 과밀 주 승격
-    #     for wk, gid in swaps:
-    #         label = month_goals[gid]["label"]
-    #         plan = weekly_plan.get(wk, {"focus": [], "routine": []})
-    #         # routine에서 제거 후 focus로 승격
-    #         before_len = len(plan["focus"])
-    #         plan["routine"] = [x for x in plan.get("routine", []) if _normalize_text(x) != gid]
-    #         if label not in plan["focus"]:
-    #             plan["focus"].append(label)
-    #             # 2개 제한 유지: 넘치면 가장 최근 것 기준으로 2개만 남김
-    #             if len(plan["focus"]) > 2:
-    #                 # 정책: 가장 마지막 2개만 유지(원하면 커스텀)
-    #                 dropped = plan["focus"][:-2]
-    #                 plan["focus"] = plan["focus"][-2:]
-    #                 # 드롭된 항목 기록
-    #                 for dlab in dropped:
-    #                     applied.append(("drop", wk, dlab, "과밀 조정(2개 제한)"))
-    #             applied.append(("promote", wk, label, "routine→focus 승격"))
-    #         weekly_plan[wk] = plan
-    #     return applied
-    
-    # # --- 제안 미리보기 DF ---
-    # preview_rows = []
-    # for wk, gid in cov_res["suggestions"]:
-    #     preview_rows.append({
-    #         "주차": wk,
-    #         "조치": "add",
-    #         "대상": month_goals[gid]["label"],
-    #         "설명": "빈 슬롯에 최대선 배치"
-    #     })
-    # for wk, gid in cov_res["swaps"]:
-    #     preview_rows.append({
-    #         "주차": wk,
-    #         "조치": "promote",
-    #         "대상": month_goals[gid]["label"],
-    #         "설명": "과밀 주 routine→focus 승격"
-    #     })
-    
-    # st.markdown("#### 👀 제안 미리보기")
-    # if preview_rows:
-    #     suggest_df = pd.DataFrame(preview_rows)
-    #     st.dataframe(suggest_df, use_container_width=True)
-    #     csv_preview = suggest_df.to_csv(index=False).encode("utf-8-sig")
-    #     st.download_button(
-    #         "📥 제안 미리보기 CSV 다운로드",
-    #         data=csv_preview,
-    #         file_name="suggestions_preview.csv",
-    #         mime="text/csv",
-    #         key="dl_suggest_preview"
-    #     )
-    # else:
-    #     st.caption("현재 자동 배치/승격 제안이 없습니다.")
-    
-    # # ========= 새로 추가: "자동 반영" 후 diff 결과표 + 다운로드 =========
-    # st.markdown("#### ✅ 제안 자동 반영")
-    
-    # if st.button("제안 자동 반영 실행"):
-    #     # 1) 반영 전 스냅샷
-    #     before = _snapshot_weekly_plan(st.session_state.weekly_plan)
-    
-    #     # 2) 반영 실행
-    #     applied_log = _apply_suggestions(
-    #         cov_res["suggestions"], cov_res["swaps"],
-    #         st.session_state.weekly_plan, month_goals
-    #     )
-    
-    #     # 3) 반영 후 스냅샷
-    #     after = _snapshot_weekly_plan(st.session_state.weekly_plan)
-    
-    #     # 4) 주차별 diff 계산
-    #     diff_rows = []
-    #     for wk in weeks.values():
-    #         b_focus = set(before.get(wk, {}).get("focus", []))
-    #         a_focus = set(after.get(wk, {}).get("focus", []))
-    #         added = sorted(list(a_focus - b_focus))
-    #         removed = sorted(list(b_focus - a_focus))
-    #         diff_rows.append({
-    #             "주차": wk,
-    #             "추가된 포커스": " | ".join(added) if added else "-",
-    #             "제거된 포커스": " | ".join(removed) if removed else "-",
-    #             "반영 후 포커스": " | ".join(after.get(wk, {}).get("focus", [])) if after.get(wk) else "-"
-    #         })
-    
-    #     diff_df = pd.DataFrame(diff_rows)
-    
-    #     st.success("제안을 주간 계획에 반영했어요. 아래 ‘반영 결과’에서 변경 내역을 확인하세요.")
-    #     st.markdown("##### 🔁 반영 결과 (주차별 변경 내역)")
-    #     st.dataframe(diff_df, use_container_width=True)
-    
-    #     csv_diff = diff_df.to_csv(index=False).encode("utf-8-sig")
-    #     st.download_button(
-    #         "📥 반영 결과(diff) CSV 다운로드",
-    #         data=csv_diff,
-    #         file_name="weekly_plan_diff.csv",
-    #         mime="text/csv",
-    #         key="dl_diff"
-    #     )
-    
-    #     # 5) 어떤 조치가 실행되었는지 로그도 표로 제공
-    #     if applied_log:
-    #         log_df = pd.DataFrame(applied_log, columns=["action","week_key","label","note"])
-    #         st.markdown("##### 🧾 적용된 세부 조치 로그")
-    #         st.dataframe(log_df, use_container_width=True)
-    #         csv_log = log_df.to_csv(index=False).encode("utf-8-sig")
-    #         st.download_button(
-    #             "📥 적용 로그 CSV 다운로드",
-    #             data=csv_log,
-    #             file_name="applied_actions_log.csv",
-    #             mime="text/csv",
-    #             key="dl_log"
-    #         )
-    #     else:
-    #         st.caption("실행된 조치가 없습니다.")
-
-
-
-
 #--------테스트    
     current_week_label = find_current_week_label(weeks)
 
@@ -773,8 +645,6 @@ if uploaded_file:
     
     default_blocks = auto_place_blocks(main_a, main_b, routines)
     
-    # --- ‘빈 플랜 박스’(상세 계획) + 자동 제안 블록 병기 ---
-    # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
     # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
     # --- 상세 플랜 저장 구조 초기화 ---
     if "day_detail" not in st.session_state:
@@ -797,21 +667,6 @@ if uploaded_file:
             key="csv_upload_global"
         )
     
-        def _parse_pipe_or_lines(s: str):
-            if not s:
-                return []
-            s = str(s)
-            if "|" in s:
-                parts = [x.strip() for x in s.split("|")]
-            else:
-                parts = []
-                for sep in ["\n", ","]:
-                    if sep in s:
-                        parts = [x.strip() for x in s.split(sep)]
-                        break
-                if not parts:
-                    parts = [s.strip()]
-            return [x for x in parts if x]
     
         if uploaded_csv is not None and st.button("🪄 CSV 불러오기 적용", key="apply_csv_global"):
             import pandas as pd
@@ -868,69 +723,6 @@ if uploaded_file:
             except Exception as e:
                 st.error(f"CSV 처리 중 오류: {e}")
 
-
-    
-    # if "day_detail" not in st.session_state:
-    #     st.session_state.day_detail = {}
-    # if selected_week_key not in st.session_state.day_detail:
-    #     st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
-    # else:
-    #     # 과거 구조(리스트) 사용하던 경우도 안전하게 변환
-    #     for d in DAYS_KR:
-    #         val = st.session_state.day_detail[selected_week_key].get(d, {"main": [], "routine": []})
-    #         if isinstance(val, list):
-    #             st.session_state.day_detail[selected_week_key][d] = {"main": val, "routine": []}
-    #         else:
-    #             st.session_state.day_detail[selected_week_key][d] = {
-    #                 "main": val.get("main", []),
-    #                 "routine": val.get("routine", [])
-    #             }
-    
-    # cols = st.columns(7)
-    # for i, d in enumerate(DAYS_KR):
-    #     with cols[i]:
-    #         date_tag = f" ({week_dates[i].month}/{week_dates[i].day})" if week_dates else ""
-    #         st.markdown(f"**{d}{date_tag}**")
-    
-    #         # 자동 제안 → 메인/배경 분리해서 보여주기
-    #         auto_items = default_blocks.get(d, []) if isinstance(default_blocks, dict) else []
-    #         auto_main = [x for x in auto_items if not x.startswith("배경:")]
-    #         auto_routine = [x for x in auto_items if x.startswith("배경:")]
-    
-    #         if auto_main or auto_routine:
-    #             st.caption("🔹 자동 제안")
-    #             if auto_main:
-    #                 st.write("- " + " | ".join(auto_main))
-    #             if auto_routine:
-    #                 st.write("- " + " | ".join(auto_routine))
-    
-    #         # ✏️ 상세 플랜(메인/배경) 두 칸
-    #         st.caption("✏️ 오늘 상세 플랜")
-    #         c_main, c_routine = st.columns(2)
-    
-    #         # 현재 값 불러오기
-    #         cur_main = st.session_state.day_detail[selected_week_key][d]["main"]
-    #         cur_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
-    
-    #         with c_main:
-    #             main_text = st.text_area(
-    #                 "메인", value="\n".join(cur_main),
-    #                 key=f"detail::{selected_week_key}::{d}::main",
-    #                 height=120, placeholder="메인 관련 상세 계획 (한 줄에 한 항목)"
-    #             )
-    #         with c_routine:
-    #             routine_text = st.text_area(
-    #                 "배경", value="\n".join(cur_routine),
-    #                 key=f"detail::{selected_week_key}::{d}::routine",
-    #                 height=120, placeholder="배경 관련 상세 계획 (한 줄에 한 항목)"
-    #             )
-    
-    #         st.session_state.day_detail[selected_week_key][d]["main"] = [
-    #             t.strip() for t in main_text.splitlines() if t.strip()
-    #         ]
-    #         st.session_state.day_detail[selected_week_key][d]["routine"] = [
-    #             t.strip() for t in routine_text.splitlines() if t.strip()
-    #         ]
 
     st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")
     st.markdown("---")        

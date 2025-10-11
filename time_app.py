@@ -31,16 +31,11 @@ def _parse_pipe_or_lines(s: str):
     return [x for x in parts if x]
             
 def _normalize_text(s: str) -> str:
-    # 공백/기호/대소문자 차이로 매칭 실패하지 않게 정규화
     s = unicodedata.normalize("NFKC", str(s)).strip()
     s = re.sub(r"\s+", " ", s)
     return s
 
 def build_month_goals(df):
-    """
-    df의 '최대선','최소선'에서 [소주제] • 항목을 파싱해
-    goal_id -> {label, kind('max'|'min'), section, item} 사전 생성
-    """
     goals = {}
     seen = set()
 
@@ -55,32 +50,22 @@ def build_month_goals(df):
         for section, item in parsed:
             label = f"{section} - {item}"
             key = _normalize_text(label)
-            if key in seen:  # 중복 제거
+            if key in seen:
                 continue
             seen.add(key)
             goals[key] = {
                 "label": label,
-                "kind": kind,          # 'max' or 'min'
+                "kind": kind,
                 "section": section,
                 "item": item,
             }
-    return goals  # key는 정규화 label
+    return goals
 
 def compute_coverage(weeks, weekly_plan, month_goals):
-    """
-    주차별 선택(weekly_plan) 대비 월 목표 커버리지/누락/과밀을 계산
-    - focus는 가중치 2, routine은 가중치 1(필요시 조정)
-    """
-    # 주당 focus 최대 2개 (이미 UI에서 max_selections=2)
     week_capacity = {wk: 2 for wk in weeks.values()}
-
-    # 목표별 커버 카운트
     cov = {gid: {"focus": 0, "routine": 0, "weeks": []} for gid in month_goals.keys()}
-
-    # 주차별 현재 focus 개수
     week_focus_count = defaultdict(int)
 
-    # 매칭
     for wk in weeks.values():
         sel = weekly_plan.get(wk, {"focus": [], "routine": []})
         for bucket, name in [("focus", "focus"), ("routine", "routine")]:
@@ -92,9 +77,6 @@ def compute_coverage(weeks, weekly_plan, month_goals):
                         cov[gid]["weeks"].append(wk)
         week_focus_count[wk] = len(sel.get("focus", []))
 
-    # 최대선 필수 조건(기본 규칙):
-    #   - 각 '최대선'은 적어도 1번은 focus로 등장해야 함
-    #   - 현실성 체크: 총 focus 슬롯 >= 최대선 개수인지 사전 진단
     num_weeks = len(weeks)
     total_focus_slots = num_weeks * 2
     max_goals = [gid for gid, g in month_goals.items() if g["kind"] == "max"]
@@ -103,10 +85,8 @@ def compute_coverage(weeks, weekly_plan, month_goals):
     missing_focus = [gid for gid in max_goals if cov[gid]["focus"] == 0]
     covered_focus = [gid for gid in max_goals if cov[gid]["focus"] >= 1]
 
-    # 배치 가능한 주(여유 슬롯이 있는 주)를 찾고, 누락된 최대선을 우선 배치 제안
     free_weeks = [wk for wk, c in week_focus_count.items() if c < 2]
-
-    suggestions = []  # [(week_key, goal_id)]
+    suggestions = []
     gi = 0
     for wk in free_weeks:
         if gi >= len(missing_focus):
@@ -114,13 +94,10 @@ def compute_coverage(weeks, weekly_plan, month_goals):
         suggestions.append((wk, missing_focus[gi]))
         gi += 1
 
-    # 남은 누락 목표가 있다면: 과밀 주에서 교체 제안(배경 → 포커스로 승격)
-    swaps = []  # [(from_week, goal_id)]  # 과밀 주의 routine을 포커스로 승격 제안
+    swaps = []
     if gi < len(missing_focus):
-        # 과밀 주들
         crowded = [wk for wk, c in week_focus_count.items() if c >= 2]
         for wk in crowded:
-            # 그 주의 routine 중에서 동일 goal이 있다면 승격 추천
             rts = weekly_plan.get(wk, {}).get("routine", [])
             r_norm = set(_normalize_text(x) for x in rts)
             for gid in missing_focus[gi:]:
@@ -143,38 +120,32 @@ def compute_coverage(weeks, weekly_plan, month_goals):
         "swaps": swaps,
     }
 
-
 def _serialize_state(s):
-    """st.session_state → JSON 직렬화 가능한 dict로 변환"""
     out = {}
     for k in STATE_KEYS:
         if k not in s:
             continue
         v = s[k]
-        # 특수 타입 처리
         if k == "completed_by_day":
-            # {(week_key, date_str): set(...)} → {"weekKey|date": list(...)}
             conv = {}
             for tkey, val in v.items():
                 if isinstance(tkey, tuple):
                     saved_key = "|".join(list(tkey))
                 else:
                     saved_key = str(tkey)
-                conv[saved_key] = list(val)  # set → list
+                conv[saved_key] = list(val)
             out[k] = conv
         else:
             out[k] = v
     return out
 
 def _deserialize_state(d):
-    """JSON → 세션 상태 복원"""
     result = {}
     for k in STATE_KEYS:
         if k not in d:
             continue
         v = d[k]
         if k == "completed_by_day":
-            # {"weekKey|date": list(...)} → {(weekKey, date): set(...)}
             conv = {}
             for skey, lst in v.items():
                 parts = skey.split("|")
@@ -212,9 +183,6 @@ def reset_state():
         STATE_FILE.unlink(missing_ok=True)
     st.sidebar.warning("상태를 초기화했어요.")
 
-
-
-# 오늘이 포함된 주차 자동 탐색
 def find_current_week_label(weeks_dict):
     for label in weeks_dict.keys():
         date_range = label.split("(")[1].strip(")")
@@ -226,97 +194,63 @@ def find_current_week_label(weeks_dict):
         if start_date <= today_date <= end_date:
             return label
     return None
-    
+
 def parse_goals(text: str):
-    """
-    문자열에서 [소주제]와 • 항목들을 매핑하여 리스트로 반환
-    """
     results = []
     current_section = None
-
-    # 줄 단위로 분리
     lines = text.strip().splitlines()
-
     for line in lines:
         line = line.strip()
         if not line:
             continue
-
-        # [소주제] 탐지
         header_match = re.match(r"\[(.*?)\]", line)
         if header_match:
             current_section = header_match.group(1).strip()
-            # 헤더에 바로 붙은 bullet이 있는 경우 ([박사] • ~)
             after = line[header_match.end():].strip()
             if after.startswith("•"):
                 item = after.lstrip("•").strip()
                 results.append((current_section, item))
             continue
-
-        # 일반 bullet 항목
         if line.startswith("•"):
             item = line.lstrip("•").strip()
             section = current_section if current_section else "기타"
             results.append((section, item))
-
     return results
 
-# --- [2] 주차 계산 함수 ---
 def generate_calendar_weeks(year: int, month: int):
-    """
-    실제 달력 기준 (월요일~일요일)으로 주차 계산
-    월 경계 포함, 예: 9/30(월)~10/6(일)
-    """
     weeks = {}
-
-    # 이번 달 1일과 마지막 날
     first_day = datetime.date(year, month, 1)
     last_day = datetime.date(year, month, calendar.monthrange(year, month)[1])
-
-    # 이번 달 첫 주의 월요일 찾기 (1일 이전일 수도 있음)
     start_of_first_week = first_day - datetime.timedelta(days=first_day.weekday())
-
     current_start = start_of_first_week
     week_num = 1
-
     while current_start <= last_day:
         current_end = current_start + datetime.timedelta(days=6)
         label = f"{week_num}주차 ({current_start.month}/{current_start.day}~{current_end.month}/{current_end.day})"
         weeks[label] = f"week{week_num}"
         current_start += datetime.timedelta(days=7)
         week_num += 1
-
     return weeks
 
-
-# -------
+# --- 기본 변수들 ---
 month_map = {"1월": 1, "2월": 2, "3월": 3, "4월": 4, "5월": 5, "6월": 6,
               "7월": 7, "8월": 8, "9월": 9, "10월": 10, "11월": 11, "12월": 12}
 
-# --- 현재 날짜 및 주차 판별 ---
 today_date = datetime.date.today()
 today_name = today_date.strftime("%A")  
 
-
 st.set_page_config(page_title="Time Focus Flow", layout="wide")
-
 st.title("🧠 주간 시간관리 웹앱")
 st.markdown("분기/월 목표에서 이번 주의 메인 목표를 선택하고, 실행 배경을 설계하세요.")
 
-# --- [NEW] 이미 생성된 주간 계획표 업로드 전용 섹션 (엑셀 없이도 가능) ---
-st.markdown("### 📦 이미 뽑아둔 주간 계획표 불러오기 (엑셀 없이 바로 진입 가능)")
+# --- [NEW] 주간 계획표 업로드 (엑셀 없이도 가능) ---
+st.markdown("### 📦 이미 뽑아둔 주간 계획표 불러오기")
 
 if "day_detail" not in st.session_state:
     st.session_state.day_detail = {}
 
-uploaded_week_csv = st.file_uploader(
-    "📥 주간 계획표 CSV 업로드 (예: week_plan_week2.csv, week_plan_week3.csv)",
-    type=["csv"],
-    key="restore_weekly_plan"
-)
-
+uploaded_week_csv = st.file_uploader("📥 주간 계획표 CSV 업로드", type=["csv"], key="restore_weekly_plan")
 if uploaded_week_csv is not None and st.button("✅ 불러온 주간 계획표 적용"):
-    import pandas as pd, re
     try:
         uploaded_week_csv.seek(0)
         try:
@@ -324,38 +258,21 @@ if uploaded_week_csv is not None and st.button("✅ 불러온 주간 계획표 �
         except UnicodeDecodeError:
             uploaded_week_csv.seek(0)
             df = pd.read_csv(uploaded_week_csv, encoding="utf-8")
-
-        # 필수 컬럼 확인
         if not set(["요일", "상세 플랜(메인)", "상세 플랜(배경)"]).issubset(df.columns):
-            st.warning("CSV에 '요일', '상세 플랜(메인)', '상세 플랜(배경)' 컬럼이 있어야 합니다.")
+            st.warning("CSV에 필요한 컬럼이 없습니다.")
         else:
-            # 파일명에서 week_key 추출
             match = re.search(r"week\d+", uploaded_week_csv.name)
             week_key = match.group(0) if match else "week_manual"
-
-            # 기본 구조 준비
-            DAYS_KR = ["월", "화", "수", "목", "금", "토", "일"]
-            st.session_state.day_detail[week_key] = {
-                d: {"main": [], "routine": []} for d in DAYS_KR
-            }
-
-            df = df.fillna("")
-            df["요일"] = df["요일"].astype(str).str.strip()
-
-            # CSV 내용 → 세션에 반영
+            DAYS_KR = ["월","화","수","목","금","토","일"]
+            st.session_state.day_detail[week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
             for _, row in df.iterrows():
                 day = str(row["요일"]).strip()
                 if not day or day not in DAYS_KR:
                     continue
-                main_items = _parse_pipe_or_lines(row["상세 플랜(메인)"])
-                routine_items = _parse_pipe_or_lines(row["상세 플랜(배경)"])
-                st.session_state.day_detail[week_key][day]["main"] = main_items
-                st.session_state.day_detail[week_key][day]["routine"] = routine_items
-
-            # 자동 주차 선택 변수도 설정 (나중에 아래 섹션에서 활용 가능)
+                st.session_state.day_detail[week_key][day]["main"] = _parse_pipe_or_lines(row["상세 플랜(메인)"])
+                st.session_state.day_detail[week_key][day]["routine"] = _parse_pipe_or_lines(row["상세 플랜(배경)"])
             st.session_state["selected_week_key_auto"] = week_key
-            st.success(f"✅ '{week_key}' 주간 계획표를 성공적으로 불러왔습니다. 엑셀 선택 없이 바로 진행할 수 있습니다!")
-
+            st.success(f"✅ '{week_key}' 주간 계획표 불러오기 완료!")
     except Exception as e:
         st.error(f"CSV 처리 오류: {e}")
 
@@ -444,7 +361,7 @@ if uploaded_file:
 
     st.markdown("## 🔎 최대선 커버리지 피드백")
 
-    # --- 요기부터: "이번달 주간 요약(summary_df)" 바로 밑에 붙이기 ---
+    # --- 요기부터: "이번달 주간 요약(summary_df)" 바로 밑에 붙이기 ---f
     
     month_goals = build_month_goals(filtered)  # 위에서 만든 filtered(선택 월 df) 사용
     cov_res = compute_coverage(weeks, st.session_state.weekly_plan, month_goals)

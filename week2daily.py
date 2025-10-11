@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import hashlib
+import io
 from pathlib import Path
 
 # ==================================================
@@ -86,28 +87,58 @@ def explode_tasks(df: pd.DataFrame):
 with st.sidebar:
     st.markdown("### 📎 주간 계획 CSV")
     uploaded = st.file_uploader("CSV 업로드 (utf-8-sig 권장)", type=["csv"])
-    st.caption("필수 컬럼: 요일 / 상세 플랜(메인) / 상세 플랜(배경)")
+    keep_hint = "한 번 업로드하면, 다른 파일을 업로드할 때까지 유지됩니다."
+
+    if "persisted_csv" not in st.session_state:
+        st.session_state.persisted_csv = None  # {name:str, bytes:bytes}
+
+    col1, col2 = st.columns([3,2])
+    with col1:
+        st.caption("필수 컬럼: 요일 / 상세 플랜(메인) / 상세 플랜(배경)")
+        st.caption(keep_hint)
+    with col2:
+        if st.button("파일 해제/초기화", use_container_width=True):
+            st.session_state.persisted_csv = None
+            st.success("고정된 CSV를 해제했어요.")
+
+    if uploaded is not None:
+        try:
+            uploaded.seek(0)
+            data_bytes = uploaded.read()
+            st.session_state.persisted_csv = {
+                "name": uploaded.name or "week_from_csv.csv",
+                "bytes": data_bytes,
+            }
+            st.success(f"업로드 고정됨: {st.session_state.persisted_csv['name']}")
+        except Exception as e:
+            st.error(f"업로드 처리 오류: {e}")
+
+# 활성 파일 결정
+active_file = None
+active_name = None
+if st.session_state.persisted_csv:
+    active_name = st.session_state.persisted_csv["name"]
+    active_file = io.BytesIO(st.session_state.persisted_csv["bytes"])  # 파일 핸들 재생성
 
 if "completed_by_day" not in st.session_state:
     st.session_state.completed_by_day = {}  # key: (week_id, day) -> set(labels)
 
-week_id = "week_from_csv"
-if uploaded and getattr(uploaded, "name", None):
-    week_id = Path(uploaded.name).stem
+week_id = Path(active_name).stem if active_name else "week_from_csv"
 
-if not uploaded:
-    st.info("CSV를 업로드하면 요일별 체크리스트가 생성됩니다.")
+if active_file is None:
+    st.info("CSV를 업로드하면 요일별 체크리스트가 생성됩니다. (업로드한 파일은 유지됩니다)")
     st.stop()
 
 # ---------------------
 # Load & Preview
 # ---------------------
 try:
-    df_plan = load_week_plan_from_csv(uploaded)
+    df_plan = load_week_plan_from_csv(active_file)
 except Exception as e:
     st.error(f"CSV 읽기 오류: {e}")
     st.stop()
 
+st.caption(f"현재 파일: **{active_name}** (고정됨)")
 with st.expander("🔍 CSV 미리보기", expanded=False):
     st.dataframe(df_plan, use_container_width=True)
 

@@ -682,6 +682,29 @@ current_week_label = find_current_week_label(weeks)
 if "weekly_plan" not in st.session_state:
     st.session_state.weekly_plan = {}   # ✅ 추가
 
+
+# --- 세션 키 보장 ---
+if "weekly_plan" not in st.session_state:
+    st.session_state.weekly_plan = {}
+if "day_detail" not in st.session_state:
+    st.session_state.day_detail = {}
+if "default_blocks" not in st.session_state:
+    st.session_state.default_blocks = {}
+    
+# --- 현재 주차 결정 ---
+current_week_label = find_current_week_label(weeks)
+if current_week_label is None and weeks:
+    # 오늘 날짜 기준 주차를 못 찾으면 첫 번째 주차로 대체
+    current_week_label = list(weeks.keys())[0]
+current_week_key = weeks.get(current_week_label, "week_manual")
+
+# --- 해당 주차용 default_blocks 생성 ---
+if current_week_key not in st.session_state.default_blocks:
+    st.session_state.default_blocks[current_week_key] = _build_default_blocks_from_weekplan(current_week_key)
+
+default_blocks = st.session_state.default_blocks[current_week_key]
+
+    
 if current_week_label:
     st.markdown(f"### 📅 이번 주: **{current_week_label}**")
     plan = st.session_state.weekly_plan.get(weeks[current_week_label], {})

@@ -29,7 +29,7 @@ def _parse_pipe_or_lines(s: str):
         parts = [x.strip() for x in s.split("|")]
     else:
         parts = []
-        for sep in [" ", ","]:
+        for sep in ["\n", ","]:
             if sep in s:
                 parts = [x.strip() for x in s.split(sep)]
                 break
@@ -84,58 +84,89 @@ def explode_tasks(df: pd.DataFrame):
 # Sidebar — CSV 업로드
 # ---------------------
 with st.sidebar:
-    st.markdown("### 📎 주간 계획 CSV")
-    uploaded = st.file_uploader("CSV 업로드 (utf-8-sig 권장)", type=["csv"])
-    keep_hint = "한 번 업로드하면, 다른 파일을 업로드할 때까지 유지됩니다."
+    st.markdown("### 📎 주간 계획 CSV (2개 지원)")
+    colA, colB = st.columns(2)
+    with colA:
+        uploaded_A = st.file_uploader("파일 A 업로드", type=["csv"], key="uploader_A")
+    with colB:
+        uploaded_B = st.file_uploader("파일 B 업로드", type=["csv"], key="uploader_B")
 
-    if "persisted_csv" not in st.session_state:
-        st.session_state.persisted_csv = None  # {name:str, bytes:bytes}
+    if "persisted_csv_A" not in st.session_state:
+        st.session_state.persisted_csv_A = None  # {name, bytes}
+    if "persisted_csv_B" not in st.session_state:
+        st.session_state.persisted_csv_B = None
 
-    col1, col2 = st.columns([3,2])
-    with col1:
-        st.caption("필수 컬럼: 요일 / 상세 플랜(메인) / 상세 플랜(배경)")
-        st.caption(keep_hint)
-    with col2:
-        if st.button("파일 해제/초기화", use_container_width=True):
-            st.session_state.persisted_csv = None
-            st.success("고정된 CSV를 해제했어요.")
+    # 저장/해제 버튼
+    c1, c2, c3 = st.columns([2,2,2])
+    with c1:
+        if st.button("A 저장/갱신") and uploaded_A is not None:
+            uploaded_A.seek(0)
+            st.session_state.persisted_csv_A = {"name": uploaded_A.name, "bytes": uploaded_A.read()}
+            st.success(f"A 고정: {uploaded_A.name}")
+    with c2:
+        if st.button("B 저장/갱신") and uploaded_B is not None:
+            uploaded_B.seek(0)
+            st.session_state.persisted_csv_B = {"name": uploaded_B.name, "bytes": uploaded_B.read()}
+            st.success(f"B 고정: {uploaded_B.name}")
+    with c3:
+        if st.button("모두 해제"):
+            st.session_state.persisted_csv_A = None
+            st.session_state.persisted_csv_B = None
+            st.success("두 파일 모두 해제됨")
 
-    if uploaded is not None:
-        try:
-            uploaded.seek(0)
-            data_bytes = uploaded.read()
-            st.session_state.persisted_csv = {
-                "name": uploaded.name or "week_from_csv.csv",
-                "bytes": data_bytes,
-            }
-            st.success(f"업로드 고정됨: {st.session_state.persisted_csv['name']}")
-        except Exception as e:
-            st.error(f"업로드 처리 오류: {e}")
+    st.caption("각각 다른 형식의 주간 플랜 CSV 두 개를 올려 고정할 수 있어요. 아래에서 어느 파일을 체크 대상으로 쓸지 선택합니다.")
 
-# 활성 파일 결정
-active_file = None
-active_name = None
-if st.session_state.persisted_csv:
-    active_name = st.session_state.persisted_csv["name"]
-    active_file = io.BytesIO(st.session_state.persisted_csv["bytes"])  # 파일 핸들 재생성
+# 활성 파일 선택
+active_choice = "A" if st.session_state.get("persisted_csv_A") else ("B" if st.session_state.get("persisted_csv_B") else None)
+if active_choice is None:
+    st.info("최소 한 개의 CSV를 저장/고정해 주세요.")
+    st.stop()
+
+active_choice = st.radio("체크 대상 파일 선택", [c for c in ["A","B"] if st.session_state.get(f"persisted_csv_{c}")], horizontal=True)
+
+# 활성 파일/이름
+active_blob = st.session_state.get(f"persisted_csv_{active_choice}")
+active_file = io.BytesIO(active_blob["bytes"]) if active_blob else None
+active_name = active_blob["name"] if active_blob else None
+
+# 보조 파일(비활성)도 준비해 두기
+aux_choice = "B" if active_choice == "A" else "A"
+aux_blob = st.session_state.get(f"persisted_csv_{aux_choice}")
+aux_file = io.BytesIO(aux_blob["bytes"]) if aux_blob else None
+aux_name = aux_blob["name"] if aux_blob else None
 
 if "completed_by_day" not in st.session_state:
-    st.session_state.completed_by_day = {}  # key: (week_id, day) -> set(labels)
+    st.session_state.completed_by_day = {}
 
 week_id = Path(active_name).stem if active_name else "week_from_csv"
 
 if active_file is None:
-    st.info("CSV를 업로드하면 요일별 체크리스트가 생성됩니다. (업로드한 파일은 유지됩니다)")
+    st.info("체크 대상 파일을 준비하지 못했습니다. 사이드바에서 파일을 올린 뒤 '저장/갱신'을 눌러주세요.")
     st.stop()
 
 # ---------------------
-# Load & Preview
+# Load & Preview (활성/보조)
 # ---------------------
 try:
     df_plan = load_week_plan_from_csv(active_file)
 except Exception as e:
-    st.error(f"CSV 읽기 오류: {e}")
+    st.error(f"활성 파일 읽기 오류: {e}")
     st.stop()
+
+# 보조 파일 파싱은 선택적
+aux_plan = None
+if aux_file is not None:
+    try:
+        aux_plan = load_week_plan_from_csv(aux_file)
+    except Exception:
+        aux_plan = None
+
+st.caption(f"현재 체크 대상: **{active_name}** ({active_choice})")
+with st.expander("🔍 활성 파일 미리보기", expanded=False):
+    st.dataframe(df_plan, use_container_width=True)
+if aux_plan is not None:
+    with st.expander(f"🗂 보조 파일 미리보기 — {aux_name} ({aux_choice})", expanded=False):
+        st.dataframe(aux_plan, use_container_width=True)
 
 st.caption(f"현재 파일: **{active_name}** (고정됨)")
 with st.expander("🔍 CSV 미리보기", expanded=False):
@@ -148,7 +179,7 @@ if not ordered_days:
     st.stop()
 
 # ---------------------
-# Sticky Top — 전체 주간 플랜 요약 (항상 상단 고정)
+# Sticky Top — 전체 주간 플랜 요약 (항상 상단 고정, 2개 탭)
 # ---------------------
 st.markdown(
     """
@@ -164,7 +195,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# HTML 테이블 구성
 def _html_escape(s: str) -> str:
     return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")) if isinstance(s, str) else str(s)
 
@@ -173,27 +203,42 @@ def _join_html_bullets(items):
         return "-"
     return "<br>".join(["• " + _html_escape(x) for x in items])
 
-rows_html = []
-for d in ordered_days:
-    mains = day_map[d]["main"]
-    routines = day_map[d]["routine"]
-    rows_html.append(f"<tr><td class='day'>{_html_escape(d)}</td><td>{_join_html_bullets(mains)}</td><td>{_join_html_bullets(routines)}</td></tr>")
+# 빌더 함수
+def _make_plan_table(df, title, fname):
+    if df is None:
+        return f"<div class='sticky-card'><div><strong>{_html_escape(title)}</strong> — 없음</div></div>"
+    # explode
+    tmp = {}
+    for _, row in df.iterrows():
+        d = str(row.get("요일", "")).strip()
+        mains = _parse_pipe_or_lines(row.get("상세 플랜(메인)", ""))
+        routines = _parse_pipe_or_lines(row.get("상세 플랜(배경)", ""))
+        if d:
+            tmp[d] = {"main": mains, "routine": routines}
+    # order
+    order = [d for d in ["월","화","수","목","금","토","일"] if d in tmp]
+    rows_html = [f"<tr><td class='day'>{_html_escape(d)}</td><td>{_join_html_bullets(tmp[d]['main'])}</td><td>{_join_html_bullets(tmp[d]['routine'])}</td></tr>" for d in order]
+    return f"""
+    <div class='sticky-card'>
+      <div><strong>{_html_escape(title)}</strong> <span class='muted'>(파일: {_html_escape(fname) if fname else '-'})</span></div>
+      <table class='sticky-table'>
+        <thead><tr><th>요일</th><th>메인</th><th>배경</th></tr></thead>
+        <tbody>{''.join(rows_html)}</tbody>
+      </table>
+    </div>
+    """
 
-top_html = f"""
+plan_html_active = _make_plan_table(df_plan, f"📌 전체 주간 플랜 — 활성({active_choice})", active_name)
+plan_html_aux = _make_plan_table(aux_plan, f"🗂 참고 플랜 — 보조({aux_choice})", aux_name)
+
+sticky_html = f"""
 <div class='sticky-plan'>
-  <div class='sticky-card'>
-    <div><strong>📌 전체 주간 플랜</strong> <span class='muted'>(현재 파일: {_html_escape(active_name) if active_name else '-'} )</span></div>
-    <table class='sticky-table'>
-      <thead><tr><th>요일</th><th>메인</th><th>배경</th></tr></thead>
-      <tbody>
-        {''.join(rows_html)}
-      </tbody>
-    </table>
-  </div>
+  {plan_html_active}
+  {plan_html_aux}
 </div>
 """
 
-st.markdown(top_html, unsafe_allow_html=True)
+st.markdown(sticky_html, unsafe_allow_html=True)
 
 # 상단에 현재 CSV 자체도 바로 볼/받을 수 있게 버튼 제공
 if st.session_state.get("persisted_csv"):

@@ -492,12 +492,39 @@ if uploaded_file:
                 st.write("**최대선 후보(메인)**", goals_max_all)
                 st.write("**최소선 후보(배경)**", goals_min_all)
 
-            # 주차 자동 배치
-            if st.button("⚙️ 이 달 목표로 주차 자동 배치 (메인 1–2 / 배경 5)", use_container_width=True, key="btn_auto_assign_month"):
-                auto_assign_weekly_plan(weeks_map, goals_max_all, goals_min_all)
-                st.success("주차별 메인/배경 자동 배치 완료!")
+            # 주차 수동 배치 UI
+st.markdown("#### 🛠 주차별 수동 배치")
+if goals_max_all or goals_min_all:
+    if "weekly_plan" not in st.session_state:
+        st.session_state.weekly_plan = {}
+    for label, wk in weeks_map.items():
+        with st.expander(f"{label} — 메인/배경 선택", expanded=False):
+            current = st.session_state.weekly_plan.get(wk, {"focus": [], "routine": []})
+            # 메인(최대 2)
+            sel_focus = st.multiselect(
+                f"메인 (최대 2) — {label}",
+                options=goals_max_all,
+                default=current.get("focus", [])[:2],
+                key=f"wk_focus_{wk}"
+            )
+            if len(sel_focus) > 2:
+                st.warning("메인은 최대 2개까지 선택 가능합니다. 처음 2개만 반영돼요.")
+                sel_focus = sel_focus[:2]
 
-            # 커버리지 체크 (최대선 미배정/용량)
+            # 배경(최대 5)
+            sel_routine = st.multiselect(
+                f"배경 (최대 5) — {label}",
+                options=goals_min_all,
+                default=current.get("routine", [])[:5],
+                key=f"wk_routine_{wk}"
+            )
+            if len(sel_routine) > 5:
+                st.warning("배경은 최대 5개까지 선택 가능합니다. 처음 5개만 반영돼요.")
+                sel_routine = sel_routine[:5]
+
+            st.session_state.weekly_plan[wk] = {"focus": sel_focus, "routine": sel_routine}
+
+# 커버리지 체크 (최대선 미배정/용량)
             if st.session_state.get("weekly_plan"):
                 cov_res = compute_coverage(weeks_map, st.session_state.weekly_plan, month_goals)
                 if not cov_res["capacity_ok"]:

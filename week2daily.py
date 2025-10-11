@@ -70,6 +70,11 @@ def _pick(df: pd.DataFrame, keys: list[str]):
     return None
 
 def load_week_like(file) -> pd.DataFrame:
+    """
+    CSV를 읽어 아래 6개 컬럼을 '항상' 갖도록 정규화해서 돌려줍니다.
+      - 요일, 날짜, 자동 제안(메인), 자동 제안(배경), 상세 플랜(메인), 상세 플랜(배경)
+    원본 CSV에 없으면 빈 문자열("")로 채우고, 헤더는 유연하게 매핑합니다.
+    """
     file.seek(0)
     try:
         df = pd.read_csv(file, encoding="utf-8-sig")
@@ -77,28 +82,59 @@ def load_week_like(file) -> pd.DataFrame:
         file.seek(0)
         df = pd.read_csv(file, encoding="utf-8")
 
-    day_col  = _pick(df, HEADER_ALIASES["day"]) or "요일"
-    main_col = _pick(df, HEADER_ALIASES["main"]) or _DEF_MAIN
-    rout_col = _pick(df, HEADER_ALIASES["routine"]) or _DEF_ROUT
+    # ---- 컬럼 후보 (유연 매핑) ----
+    # 요일/메인/배경은 기존 별칭 사용
+    day_aliases  = HEADER_ALIASES["day"]          # ["요일","day","일자"]
+    main_aliases = HEADER_ALIASES["main"]         # ["상세 플랜(메인)","메인","main","포커스","focus"]
+    rout_aliases = HEADER_ALIASES["routine"]      # ["상세 플랜(배경)","배경","routine","background"]
 
-    if day_col not in df.columns:
+    # 추가: 날짜/자동제안 별칭
+    date_aliases      = ["날짜", "date", "일자", "날짜(yyyy-mm-dd)", "날짜(YYYY-MM-DD)"]
+    auto_main_aliases = ["자동 제안(메인)", "자동제안(메인)", "자동제안메인", "제안(메인)", "제안메인", "auto_main", "suggest_main"]
+    auto_rout_aliases = ["자동 제안(배경)", "자동제안(배경)", "자동제안배경", "제안(배경)", "제안배경", "auto_routine", "suggest_routine"]
+
+    # ---- 유연 매핑 픽 ----
+    day_col       = _pick(df, day_aliases)
+    date_col      = _pick(df, date_aliases)
+    main_col      = _pick(df, main_aliases)
+    rout_col      = _pick(df, rout_aliases)
+    auto_main_col = _pick(df, auto_main_aliases)
+    auto_rout_col = _pick(df, auto_rout_aliases)
+
+    # ---- 필수 최소 요건: '요일'은 있어야 함 ----
+    if day_col is None:
         raise ValueError(f"B 파일에 '요일'에 해당하는 칼럼이 없습니다. CSV 헤더: {list(df.columns)}")
-    if main_col not in df.columns and rout_col not in df.columns:
-        raise ValueError("B 파일에 메인/배경 칼럼이 없습니다. 최소 하나는 필요합니다.")
 
-    # 누락된 칼럼은 빈 문자열로 채움
-    if main_col not in df.columns:
-        df[main_col] = ""
-    if rout_col not in df.columns:
-        df[rout_col] = ""
+    # ---- 누락된 컬럼은 빈 문자열로 만들어 채워 넣기 ----
+    if date_col is None:
+        df["__날짜__"] = ""
+        date_col = "__날짜__"
+    if main_col is None:
+        df["__상세메인__"] = ""
+        main_col = "__상세메인__"
+    if rout_col is None:
+        df["__상세배경__"] = ""
+        rout_col = "__상세배경__"
+    if auto_main_col is None:
+        df["__자동메인__"] = ""
+        auto_main_col = "__자동메인__"
+    if auto_rout_col is None:
+        df["__자동배경__"] = ""
+        auto_rout_col = "__자동배경__"
 
-    out = df[[day_col, main_col, rout_col]].copy()
-    out.columns = ["요일", _DEF_MAIN, _DEF_ROUT]
+    # ---- 출력 스키마 구성 ----
+    out = df[[day_col, date_col, auto_main_col, auto_rout_col, main_col, rout_col]].copy()
+    out.columns = ["요일", "날짜", "자동 제안(메인)", "자동 제안(배경)", "상세 플랜(메인)", "상세 플랜(배경)"]
+
+    # ---- 정리/정렬 ----
     out = out.fillna("")
+    # 요일 카테고리 정렬 (존재하는 행만 반영)
     cat = pd.CategoricalDtype(categories=DAYS_KR, ordered=True)
     out["요일"] = pd.Categorical(out["요일"].astype(str).str.strip(), dtype=cat)
     out = out.sort_values("요일").reset_index(drop=True)
+
     return out
+
 
 # ---------------------
 # Sidebar — A/B 업로드 및 고정

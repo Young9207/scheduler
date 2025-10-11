@@ -1063,3 +1063,4 @@ if "state_loaded_once" not in st.session_state:
     st.session_state["state_loaded_once"] = True
 # 페이지 맨 끝 (모든 UI 렌더 후)
 save_state()
+

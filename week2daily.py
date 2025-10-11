@@ -29,7 +29,7 @@ def _parse_pipe_or_lines(s: str):
         parts = [x.strip() for x in s.split("|")]
     else:
         parts = []
-        for sep in [" ", ","]:
+        for sep in ["|", ","]:
             if sep in s:
                 parts = [x.strip() for x in s.split(sep)]
                 break

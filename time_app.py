@@ -330,6 +330,7 @@ if uploaded_week_csv is not None:
         st.error(f"CSV 처리 오류: {e}")
 
 # --- 주차 플랜 CSV 업로드: weekly_plan 갱신 (가상/원본 포맷 모두 지원) ---
+# --- 주차 플랜 CSV 업로드: weekly_plan 갱신 + 즉시 미리보기 (가상/원본 모두 지원) ---
 st.markdown("### 📦 주차 플랜 CSV 업로드 (가상/원본 둘 다 지원)")
 
 uploaded_plan_csv = st.file_uploader(
@@ -353,31 +354,28 @@ if uploaded_plan_csv is not None:
             uploaded_plan_csv.seek(0)
             df_plan = pd.read_csv(uploaded_plan_csv, encoding="utf-8")
 
-        # 필수 '주차' 컬럼
+        # ⬇⬇⬇ 화면에 바로 보여주기 (미리보기)
+        st.markdown("#### 🗂 업로드한 주차 플랜 미리보기")
+        st.dataframe(df_plan, use_container_width=True)
+
         if "주차" not in df_plan.columns:
             st.warning("이 파일에는 '주차' 컬럼이 없습니다. (예: '1주차 (10/7~10/13)')")
         else:
             # 컬럼 후보: 가상/원본 모두 커버
-            focus_col = _pick_first_existing(
-                df_plan.columns,
-                ["포커스(가상)", "메인 포커스", "포커스"]
-            )
-            routine_col = _pick_first_existing(
-                df_plan.columns,
-                ["배경(가상)", "배경"]
-            )
+            focus_col = _pick_first_existing(df_plan.columns, ["포커스(가상)", "메인 포커스", "포커스"])
+            routine_col = _pick_first_existing(df_plan.columns, ["배경(가상)", "배경"])
             if focus_col is None and routine_col is None:
                 st.warning("포커스/배경 컬럼을 찾지 못했습니다. (예: '포커스(가상)', '배경(가상)' 또는 '메인 포커스', '배경')")
             else:
                 if "weekly_plan" not in st.session_state:
                     st.session_state.weekly_plan = {}
 
-                # 주차 라벨 → week_key 매핑 구성
-                # 1순위: 이미 계산된 weeks 라벨 매핑 사용
-                week_key_map = {}
-                if "weeks" in locals() and isinstance(weeks, dict) and len(weeks) > 0:
-                    week_key_map.update(weeks)  # label -> week_key
+                # 엑셀 없이도 동작하도록 weeks 폴백
+                if "weeks" not in locals() or not isinstance(weeks, dict) or len(weeks) == 0:
+                    _today = datetime.date.today()
+                    weeks = generate_calendar_weeks(_today.year, _today.month)
 
+                week_key_map = dict(weeks)  # label -> week_key
                 updated_rows = 0
                 first_week_key_seen = None
 
@@ -390,39 +388,26 @@ if uploaded_plan_csv is not None:
                     if label in week_key_map:
                         wk = week_key_map[label]
                     else:
-                        # 라벨에서 "n주차" 숫자 추출 → week{n}
                         m = re.search(r"(\d+)\s*주차", label)
-                        if m:
-                            wk = f"week{int(m.group(1))}"
-                        else:
-                            # 최후: 해시 기반 임시 키
-                            wk = "week_" + hashlib.md5(label.encode("utf-8")).hexdigest()[:8]
+                        wk = f"week{int(m.group(1))}" if m else "week_" + hashlib.md5(label.encode("utf-8")).hexdigest()[:8]
 
                     # 포커스/배경 파싱
                     focus_raw = str(row[focus_col]).strip() if focus_col else ""
                     routine_raw = str(row[routine_col]).strip() if routine_col else ""
 
-                    focus_list = _parse_pipe_or_lines(focus_raw)
-                    routine_list = _parse_pipe_or_lines(routine_raw)
-
-                    # 제한치(메인 2개, 배경 5개) 적용
-                    focus_list = focus_list[:2]
-                    routine_list = routine_list[:5]
-
                     st.session_state.weekly_plan[wk] = {
-                        "focus": focus_list,
-                        "routine": routine_list
+                        "focus": _parse_pipe_or_lines(focus_raw)[:2],
+                        "routine": _parse_pipe_or_lines(routine_raw)[:5],
                     }
                     updated_rows += 1
                     if first_week_key_seen is None:
                         first_week_key_seen = wk
 
-                # 자동 선택 주차 키 설정 (현재 주차 가능하면 그걸로, 아니면 첫 행)
+                # 자동 선택 주차키 지정 (현재 주차 우선 → 없으면 첫 행)
                 auto_week_key = None
-                if "weeks" in locals() and isinstance(weeks, dict) and len(weeks) > 0:
-                    cur_label = find_current_week_label(weeks)
-                    if cur_label and cur_label in weeks:
-                        auto_week_key = weeks[cur_label]
+                cur_label = find_current_week_label(weeks)
+                if cur_label and cur_label in weeks:
+                    auto_week_key = weeks[cur_label]
                 if auto_week_key is None:
                     auto_week_key = first_week_key_seen
 
@@ -433,7 +418,6 @@ if uploaded_plan_csv is not None:
                 st.caption(f"활성 주차 키: {st.session_state.get('selected_week_key_auto', '-')}")
     except Exception as e:
         st.error(f"주차 플랜 CSV 처리 오류: {e}")
-
 
 
 # 1. 엑셀 업로드

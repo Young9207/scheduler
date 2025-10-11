@@ -79,6 +79,72 @@ def explode_tasks(df: pd.DataFrame):
     ordered_days = [d for d in DAYS_KR if d in ordered_days]
     return day_map, ordered_days
 
+# === Flexible CSV loader for A(virtual.csv) / B(week.csv) ===
+import re
+
+def _norm(s: str) -> str:
+    s = str(s).strip().lower()
+    s = re.sub(r"\s+", "", s)
+    return s.replace("_", "")
+
+def _find_col(df: pd.DataFrame, candidates: list[str]):
+    cols = list(df.columns)
+    by_norm = { _norm(c): c for c in cols }
+    for cand in candidates:
+        key = _norm(cand)
+        if key in by_norm:
+            return by_norm[key]
+    # fuzzy contains as last resort
+    for c in cols:
+        nc = _norm(c)
+        if any(_norm(x) in nc for x in candidates):
+            return c
+    return None
+
+def load_flexible_plan(file, prefer: str = "A") -> pd.DataFrame:
+    """
+    Flexible loader that maps columns for:
+      - A (virtual.csv): supports 요일/day, 메인/main, 배경/routine 등 변형
+      - B (week.csv):    표준 요일/상세 플랜(메인)/상세 플랜(배경)
+    prefer="A" or "B" changes which candidate set is tried first.
+    """
+    file.seek(0)
+    try:
+        df = pd.read_csv(file, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        file.seek(0)
+        df = pd.read_csv(file, encoding="utf-8")
+
+    # Candidate names
+    day_A  = ["요일", "day", "일자", "date"]
+    main_A = ["상세 플랜(메인)", "메인", "main", "main_tasks", "main task", "상세플랜메인"]
+    rout_A = ["상세 플랜(배경)", "배경", "routine", "background", "routine_tasks", "상세플랜배경"]
+
+    day_B  = ["요일", "day"]
+    main_B = ["상세 플랜(메인)", "메인", "main"]
+    rout_B = ["상세 플랜(배경)", "배경", "routine"]
+
+    if prefer.upper() == "A":
+        day_col  = _find_col(df, day_A)  or _find_col(df, day_B)
+        main_col = _find_col(df, main_A) or _find_col(df, main_B)
+        rout_col = _find_col(df, rout_A) or _find_col(df, rout_B)
+    else:
+        day_col  = _find_col(df, day_B)  or _find_col(df, day_A)
+        main_col = _find_col(df, main_B) or _find_col(df, main_A)
+        rout_col = _find_col(df, rout_B) or _find_col(df, rout_A)
+
+    missing = [name for name, col in [("요일", day_col), ("메인", main_col), ("배경", rout_col)] if col is None]
+    if missing:
+        raise ValueError(f"필수 컬럼을 찾을 수 없습니다: {', '.join(missing)} — CSV 헤더명을 확인하세요.")
+
+    out = df[[day_col, main_col, rout_col]].copy()
+    out.columns = ["요일", "상세 플랜(메인)", "상세 플랜(배경)"]
+    out = out.fillna("")
+    cat = pd.CategoricalDtype(categories=["월","화","수","목","금","토","일"], ordered=True)
+    out["요일"] = pd.Categorical(out["요일"].astype(str).str.strip(), dtype=cat)
+    out = out.sort_values("요일").reset_index(drop=True)
+    return out
+
 
 # ---------------------
 # Sidebar — CSV 업로드
@@ -148,7 +214,9 @@ if active_file is None:
 # Load & Preview (활성/보조)
 # ---------------------
 try:
-    df_plan = load_week_plan_from_csv(active_file)
+    df_plan = load_flexible_plan(active_file, prefer=active_choice)
+    aux_plan = load_flexible_plan(aux_file, prefer=aux_choice)  # aux_file 있을 때만
+
 except Exception as e:
     st.error(f"활성 파일 읽기 오류: {e}")
     st.stop()

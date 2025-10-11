@@ -749,28 +749,36 @@ else:
 # ===============================
 # 🌙 이번 달 주간 요약 미리보기 (상세 플랜 참고용)
 # ===============================
+# ===============================
+# 🌙 이번 달 주간 요약 미리보기 (상세 플랜 참고용)
+# ===============================
 if "weekly_plan" in st.session_state and len(st.session_state.weekly_plan) > 0:
     st.markdown("### 🗂 이번 달 주간 요약 미리보기")
 
     summary_rows = []
-    for label, wk_key in weeks.items():
-        plan = st.session_state.weekly_plan.get(wk_key, {"focus": [], "routine": []})
+    for i, (w_start, w_end, days) in enumerate(weeks, start=1):
+        label = f"{i}주차 ({w_start.strftime('%m/%d')}~{w_end.strftime('%m/%d')})"
+        week_key = f"week{i}"
+        plan = st.session_state.weekly_plan.get(week_key, {"focus": [], "routine": []})
         summary_rows.append({
             "주차": label,
             "메인 포커스": " | ".join(plan.get("focus", [])) or "-",
             "배경": " | ".join(plan.get("routine", [])) or "-",
         })
+
     summary_df = pd.DataFrame(summary_rows)
 
     # 이번 주 강조 표시
-    styled_summary = summary_df.style.apply(
-        lambda row: ["background-color: #fef3c7" if row["주차"] == selected_week_label else "" for _ in row],
-        axis=1
-    )
+    def highlight_current(row):
+        if selected_week_label in row["주차"]:
+            return ["background-color: #fef3c7"] * len(row)
+        return ["" for _ in row]
 
-    st.dataframe(styled_summary, use_container_width=True)
+    st.dataframe(summary_df.style.apply(highlight_current, axis=1), use_container_width=True)
+
 else:
     st.info("이번 달 주간 계획(포커스/배경)이 아직 없습니다. 'montly-weekly 플랜 CSV 업로드' 섹션에서 먼저 불러오세요.")
+
 
 # ===============================
 # 📋 이 주의 상세 플랜 (표로 직접 편집, 자동제안 사용 안 함)

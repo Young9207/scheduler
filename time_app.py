@@ -936,6 +936,15 @@ else:
             except Exception as e:
                 st.error(f"CSV 처리 중 오류: {e}")
 
+    # --- 세션 기본 구조 보장 ---
+    if "weekly_plan" not in st.session_state:
+        st.session_state.weekly_plan = {}
+    if "day_detail" not in st.session_state:
+        st.session_state.day_detail = {}
+    if "completed_by_day" not in st.session_state:
+        st.session_state.completed_by_day = {}
+    if "weekly_review" not in st.session_state:
+        st.session_state.weekly_review = {}
 
 
     st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")

@@ -822,26 +822,50 @@ with st.container():
         st.info(f"**배경 루틴:** {background_focus}")
 
 # 2️⃣ 상세 플랜 보기
+# 2️⃣ 상세 플랜 보기
 with tab2:
-    st.markdown("### ✍️ 요일별 상세 플랜 편집")
-    st.caption("하단 표에서 바로 수정할 수 있습니다.")
+    st.markdown("### ✍️ 날짜별 상세 플랜 (실제 달력 기준)")
+    st.caption("이번 주 실제 날짜에 맞춰 플랜을 편집할 수 있습니다.")
+
+    # 안전 가드
+    if "day_detail" not in st.session_state:
+        st.session_state.day_detail = {}
+    if selected_week_key not in st.session_state.day_detail:
+        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+
+    days_kr = ["월", "화", "수", "목", "금", "토", "일"]
     edit_rows = []
-    for i, d in enumerate(DAYS_KR):
-        date_disp = f"{week_dates[i].month}/{week_dates[i].day}"
-        detail_main = st.session_state.day_detail[selected_week_key][d]["main"]
-        detail_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
+
+    for date_obj in week_dates:
+        weekday_kr = days_kr[date_obj.weekday()]
+        date_disp = date_obj.strftime("%m/%d")
+        detail_main = st.session_state.day_detail[selected_week_key][weekday_kr]["main"]
+        detail_routine = st.session_state.day_detail[selected_week_key][weekday_kr]["routine"]
         edit_rows.append({
-            "요일": d,
             "날짜": date_disp,
+            "요일": weekday_kr,
             "상세 플랜(메인)": " | ".join(detail_main),
             "상세 플랜(배경)": " | ".join(detail_routine),
         })
-    df_edit = pd.DataFrame(edit_rows)
+
+    df_edit = pd.DataFrame(edit_rows, columns=["날짜", "요일", "상세 플랜(메인)", "상세 플랜(배경)"])
+
     edited = st.data_editor(df_edit, hide_index=True, use_container_width=True)
+
+    # 수정 내용 반영
     for _, row in edited.iterrows():
-        day = row["요일"]
-        st.session_state.day_detail[selected_week_key][day]["main"] = _parse_pipe_or_lines(row["상세 플랜(메인)"])
-        st.session_state.day_detail[selected_week_key][day]["routine"] = _parse_pipe_or_lines(row["상세 플랜(배경)"])
+        weekday = row["요일"]
+        st.session_state.day_detail[selected_week_key][weekday]["main"] = _parse_pipe_or_lines(row["상세 플랜(메인)"])
+        st.session_state.day_detail[selected_week_key][weekday]["routine"] = _parse_pipe_or_lines(row["상세 플랜(배경)"])
+
+    # CSV 다운로드
+    csv_week = edited.to_csv(index=False).encode("utf-8-sig")
+    st.download_button(
+        "📥 이 주 상세 플랜 CSV 다운로드 (날짜 기준)",
+        data=csv_week,
+        file_name=f"week_detail_{selected_week_key}.csv",
+        mime="text/csv",
+    )
 
 # 3️⃣ 진행 현황 보기
 with tab3:

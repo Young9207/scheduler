@@ -678,6 +678,10 @@ if uploaded_file:
             )
         else:
             st.caption("실행된 가상 조치가 없습니다.")
+# 엑셀 업로드가 없어도 weeks 보장
+if "weeks" not in locals() or not isinstance(weeks, dict) or len(weeks) == 0:
+    _today = datetime.date.today()
+    weeks = generate_calendar_weeks(_today.year, _today.month)
 
 #--------테스트    
 current_week_label = find_current_week_label(weeks)
@@ -800,10 +804,10 @@ main_b = mains[1] if len(mains) >= 2 else None
     
     # default_blocks = auto_place_blocks(main_a, main_b, routines)
     # 교체 후
-    if main_a:
-        default_blocks = auto_place_blocks(main_a, main_b, routines)
-    else:
-        default_blocks = {d: [] for d in ["월","화","수","목","금","토","일"]}
+if main_a:
+    default_blocks = auto_place_blocks(main_a, main_b, routines)
+else:
+    default_blocks = {d: [] for d in ["월","화","수","목","금","토","일"]}
 
     
     # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
@@ -1010,17 +1014,18 @@ main_b = mains[1] if len(mains) >= 2 else None
     )
 
     # 체크리스트 블록 시작 직후, selected_week_key 계산한 다음에:
-    if "default_blocks" not in locals() or not isinstance(default_blocks, dict) or len(default_blocks)==0:
-    # weekly_plan에서 자동 제안 생성 (업로드만 한 경우에도 동작)
+    # default_blocks 보장: weekly_plan이 없거나 메인/배경이 비어도 동작
+    if "default_blocks" not in locals() or not isinstance(default_blocks, dict) or len(default_blocks) == 0:
         if "weekly_plan" in st.session_state and selected_week_key in st.session_state.weekly_plan:
             default_blocks = _build_default_blocks_from_weekplan(selected_week_key)
         else:
             default_blocks = {d: [] for d in ["월","화","수","목","금","토","일"]}
 
+
     
     # 해당 주차 구조 보장
     if selected_week_key not in st.session_state.day_detail:
-        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYSㄴ_KR}
+        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
     
     # 오늘 요일 자동 + 수동 선택 가능
     today = datetime.date.today()

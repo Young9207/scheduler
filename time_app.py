@@ -713,45 +713,10 @@ selected_week_key = st.session_state.get("selected_week_key_auto", selected_week
 # Parse week dates from label
 week_dates = parse_week_dates_from_label(selected_week_label)
 
-st.markdown(f"### 🗓 {selected_week_label} — 월-일 가로 블록 + 상세 플랜")
-
-# Aggregate weekly mains/routines
-plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
-mains = plan.get("focus", [])[:2]
-routines = plan.get("routine", [])
-week_detail = st.session_state.day_detail.get(selected_week_key, {})
-
-if not mains:
-    main_candidates = []
-    for d in DAYS_KR:
-        main_candidates += week_detail.get(d, {}).get("main", [])
-    seen = set()
-    mains = [x for x in main_candidates if not (x in seen or seen.add(x))][:2]
-
-if not routines:
-    routine_candidates = []
-    for d in DAYS_KR:
-        routine_candidates += week_detail.get(d, {}).get("routine", [])
-    seen = set()
-    routines = [x for x in routine_candidates if not (x in seen or seen.add(x))][:5]
-
-if not mains and not routines:
-    st.info("이 주의 메인/배경이 비어 있습니다. CSV의 요일별 상세 플랜으로만 표시합니다.")
-
-main_a = mains[0] if len(mains) >= 1 else None
-main_b = mains[1] if len(mains) >= 2 else None
-
-if main_a:
-    default_blocks = auto_place_blocks(main_a, main_b, routines)
-else:
-    default_blocks = {d: [] for d in DAYS_KR}
-
-# ===============================
-# 📋 이 주의 상세 플랜 (표로 직접 편집, 자동제안 사용 안 함)
-# ===============================
 # ===============================
 # 📅 이 주의 상세 플랜 (날짜 기준, 표로 직접 편집)
 # ===============================
+st.markdown(f"### 🗓 {selected_week_label} — 월-일 가로 블록 + 상세 플랜")
 st.markdown("#### ✍️ 이 주의 상세 플랜 (날짜 기준, 직접 편집)")
 st.caption("이번 주 실제 날짜에 맞춰 상세 플랜을 작성하거나 수정하세요.")
 
@@ -765,6 +730,19 @@ def _join_for_cell(items):
     return " | ".join(items) if items else ""
 
 days_kr = ["월", "화", "수", "목", "금", "토", "일"]
+
+# ✅ 주간 메인 포커스 / 배경 루틴 요약 표시
+week_plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
+main_focus = " | ".join(week_plan.get("focus", [])[:2]) or "-"
+background_focus = " | ".join(week_plan.get("routine", [])[:5]) or "-"
+
+c1, c2 = st.columns(2)
+with c1:
+    st.info(f"**🎯 메인 포커스 (1–2개)**\n\n{main_focus}")
+with c2:
+    st.info(f"**🌿 배경 루틴 (최대 5개)**\n\n{background_focus}")
+
+st.divider()
 
 # ✅ 실제 날짜 기준으로 표 구성
 table_rows = []
@@ -806,6 +784,7 @@ st.download_button(
     mime="text/csv",
     key=f"csv_{selected_week_key}",  # ✅ 고유 key 추가
 )
+
 
 
 # Weekly table (day-wise)

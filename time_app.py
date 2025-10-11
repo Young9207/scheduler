@@ -20,6 +20,7 @@ MONTH_MAP = {f"{i}월": i for i in range(1, 13)}
 # =========================
 # Utilities
 # =========================
+
 def _parse_pipe_or_lines(s: str):
     if not s:
         return []
@@ -41,14 +42,6 @@ def _normalize_text(s: str) -> str:
     s = unicodedata.normalize("NFKC", str(s)).strip()
     s = re.sub(r"\s+", " ", s)
     return s
-
-
-def _snapshot_weekly_plan(plan_dict):
-    snap = {}
-    for wk, v in plan_dict.items():
-        snap[wk] = {"focus": list(v.get("focus", [])), "routine": list(v.get("routine", []))}
-    return snap
-
 
 # =========================
 # Week/Calendar helpers
@@ -88,9 +81,7 @@ def find_current_week_label(weeks_meta, today_date: datetime.date | None = None)
 
 
 def parse_week_dates_from_label(week_label: str, year: int | None = None):
-    """Parse label '1주차 (10/7~10/13)' to list[date] length 7.
-    Handles year rollovers (e.g., 12/30~1/5).
-    """
+    """Parse label '1주차 (10/7~10/13)' to list[date] length 7. Handles year rollovers."""
     if year is None:
         year = datetime.date.today().year
     m = re.search(r"\((\d{1,2})/(\d{1,2})\s*[~–-]\s*(\d{1,2})/(\d{1,2})\)", week_label)
@@ -99,17 +90,14 @@ def parse_week_dates_from_label(week_label: str, year: int | None = None):
         start = today - datetime.timedelta(days=today.weekday())
         return [start + datetime.timedelta(days=i) for i in range(7)]
     sm, sd, em, ed = map(int, m.groups())
-
     start_year = year
     end_year = year + (1 if em < sm else 0)
-
     start = datetime.date(start_year, sm, sd)
     end = datetime.date(end_year, em, ed)
     days = [start + datetime.timedelta(days=i) for i in range((end - start).days + 1)]
     while len(days) < 7:
         days.append(days[-1] + datetime.timedelta(days=1))
     return days[:7]
-
 
 # =========================
 # Goal parsing & coverage
@@ -139,7 +127,6 @@ def parse_goals(text: str):
 
 
 def build_month_goals(df: pd.DataFrame):
-    """엑셀의 '최대선/최소선'을 파싱해서 월 전체 목표 dict 생성."""
     goals = {}
     seen = set()
     blocks = []
@@ -147,7 +134,6 @@ def build_month_goals(df: pd.DataFrame):
         blocks += [("max", x) for x in df["최대선"].dropna().tolist()]
     if "최소선" in df.columns:
         blocks += [("min", x) for x in df["최소선"].dropna().tolist()]
-
     for kind, text in blocks:
         parsed = parse_goals(str(text))
         for section, item in parsed:
@@ -156,20 +142,13 @@ def build_month_goals(df: pd.DataFrame):
             if key in seen:
                 continue
             seen.add(key)
-            goals[key] = {
-                "label": label,
-                "kind": kind,
-                "section": section,
-                "item": item,
-            }
+            goals[key] = {"label": label, "kind": kind, "section": section, "item": item}
     return goals
 
 
 def compute_coverage(weeks_map: dict, weekly_plan: dict, month_goals: dict):
-    """월 목표가 주차 포커스/배경에 얼마나 배치됐는지 확인."""
     cov = {gid: {"focus": 0, "routine": 0, "weeks": []} for gid in month_goals.keys()}
     week_focus_count = defaultdict(int)
-
     for _, wk in weeks_map.items():
         sel = weekly_plan.get(wk, {"focus": [], "routine": []})
         for bucket, name in [("focus", "focus"), ("routine", "routine")]:
@@ -180,15 +159,12 @@ def compute_coverage(weeks_map: dict, weekly_plan: dict, month_goals: dict):
                     if wk not in cov[gid]["weeks"]:
                         cov[gid]["weeks"].append(wk)
         week_focus_count[wk] = len(sel.get("focus", []))
-
     num_weeks = len(weeks_map)
     total_focus_slots = num_weeks * 2
     max_goals = [gid for gid, g in month_goals.items() if g["kind"] == "max"]
     capacity_ok = total_focus_slots >= len(max_goals)
-
     missing_focus = [gid for gid in max_goals if cov[gid]["focus"] == 0]
     covered_focus = [gid for gid in max_goals if cov[gid]["focus"] >= 1]
-
     free_weeks = [wk for wk, c in week_focus_count.items() if c < 2]
     suggestions = []
     gi = 0
@@ -197,7 +173,6 @@ def compute_coverage(weeks_map: dict, weekly_plan: dict, month_goals: dict):
             break
         suggestions.append((wk, missing_focus[gi]))
         gi += 1
-
     swaps = []
     if gi < len(missing_focus):
         crowded = [wk for wk, c in week_focus_count.items() if c >= 2]
@@ -212,7 +187,6 @@ def compute_coverage(weeks_map: dict, weekly_plan: dict, month_goals: dict):
                         break
             if gi >= len(missing_focus):
                 break
-
     return {
         "capacity_ok": capacity_ok,
         "total_focus_slots": total_focus_slots,
@@ -223,7 +197,6 @@ def compute_coverage(weeks_map: dict, weekly_plan: dict, month_goals: dict):
         "suggestions": suggestions,
         "swaps": swaps,
     }
-
 
 # =========================
 # State (load/save/reset)
@@ -296,7 +269,6 @@ def reset_state():
         STATE_FILE.unlink(missing_ok=True)
     st.sidebar.warning("상태를 초기화했어요.")
 
-
 # =========================
 # Default blocks from weekly plan + Ensurer
 # =========================
@@ -341,13 +313,11 @@ def ensure_default_blocks(selected_week_key: str):
         st.session_state.default_blocks[selected_week_key] = _build_default_blocks_from_weekplan(selected_week_key)
     return st.session_state.default_blocks[selected_week_key]
 
-
 # =========================
 # Core planning: auto assign + weekly detail
 # =========================
 
 def auto_assign_weekly_plan(weeks_map: OrderedDict, goals_max: list[str], goals_min: list[str]):
-    """각 주차 메인 1-2, 배경 최대 5를 라운드로빈 자동 배치."""
     if "weekly_plan" not in st.session_state:
         st.session_state.weekly_plan = {}
     gi_max, gi_min = 0, 0
@@ -365,15 +335,6 @@ def auto_assign_weekly_plan(weeks_map: OrderedDict, goals_max: list[str], goals_
 
 
 def generate_weekly_detail(selected_week_key: str, week_dates: list[datetime.date]):
-    """
-    메인 A/B 배치:
-      - A: 월/수/금
-      - B: 화/목/금
-    주말:
-      - 토: 보완/미완료
-      - 일: 회고/다음주 준비
-    배경: 요일 순환
-    """
     plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
     mains, routines = plan.get("focus", [])[:2], plan.get("routine", [])
     main_a = mains[0] if len(mains) >= 1 else None
@@ -393,7 +354,6 @@ def generate_weekly_detail(selected_week_key: str, week_dates: list[datetime.dat
         if d == "일":
             detail[d]["main"].append("회고 및 다음 주 준비")
     return detail
-
 
 # =========================
 # Streamlit App
@@ -440,7 +400,6 @@ month_goals = {}
 if uploaded_file:
     try:
         with st.expander("🔍 시트 미리보기", expanded=False):
-            # reading sheet names might advance the stream pointer; we'll reset before actual read
             xls = pd.ExcelFile(uploaded_file)
             st.write("엑셀 시트 목록:", xls.sheet_names)
             uploaded_file.seek(0)
@@ -450,10 +409,9 @@ if uploaded_file:
         if missing:
             st.error(f"시트에 필요한 컬럼이 없습니다: {', '.join(sorted(missing))}")
         else:
-            df = df[["프로젝트", "월", "최소선", "최대선", *(["측정지표"] if "측정지표" in df.columns else [])]]
+            df = df[["프로젝트", "월", "최소선", "최대선", *( ["측정지표"] if "측정지표" in df.columns else [] )]]
             df = df.dropna(subset=["월"])  # type: ignore
 
-            # 월 선택값을 안전하게 정수 월로 변환
             raw_months = sorted(df["월"].dropna().unique())
             display_months = [f"{int(m)}월" if isinstance(m, (int, float)) or (isinstance(m, str) and m.isdigit()) else str(m) for m in raw_months]
             selected_month = st.selectbox("📅 월을 선택하세요", display_months)
@@ -469,7 +427,6 @@ if uploaded_file:
 
             weeks_meta, weeks_map = month_weeks(year, month_num, week_start=0)
 
-            # 원본 행 필터링 (원본 df의 월 값과 비교를 위해 숫자화)
             def _month_col_to_num(x):
                 if isinstance(x, (int, float)):
                     return int(x)
@@ -483,7 +440,6 @@ if uploaded_file:
             cols_show = [c for c in ["프로젝트", "최대선", "최소선"] if c in filtered.columns]
             st.dataframe(filtered[cols_show], use_container_width=True)
 
-            # 월 목표 dict (kind: max/min)
             month_goals = build_month_goals(filtered)
             goals_max_all = [g["label"] for g in month_goals.values() if g["kind"] == "max"]
             goals_min_all = [g["label"] for g in month_goals.values() if g["kind"] == "min"]
@@ -492,45 +448,15 @@ if uploaded_file:
                 st.write("**최대선 후보(메인)**", goals_max_all)
                 st.write("**최소선 후보(배경)**", goals_min_all)
 
-            # 주차 수동 배치 UI
-st.markdown("#### 🛠 주차별 수동 배치")
-if goals_max_all or goals_min_all:
-    if "weekly_plan" not in st.session_state:
-        st.session_state.weekly_plan = {}
-    for label, wk in weeks_map.items():
-        with st.expander(f"{label} — 메인/배경 선택", expanded=False):
-            current = st.session_state.weekly_plan.get(wk, {"focus": [], "routine": []})
-            # 메인(최대 2)
-            sel_focus = st.multiselect(
-                f"메인 (최대 2) — {label}",
-                options=goals_max_all,
-                default=current.get("focus", [])[:2],
-                key=f"wk_focus_{wk}"
-            )
-            if len(sel_focus) > 2:
-                st.warning("메인은 최대 2개까지 선택 가능합니다. 처음 2개만 반영돼요.")
-                sel_focus = sel_focus[:2]
+            if st.button("⚙️ 이 달 목표로 주차 자동 배치 (메인 1–2 / 배경 5)", use_container_width=True, key="btn_auto_assign_month"):
+                auto_assign_weekly_plan(weeks_map, goals_max_all, goals_min_all)
+                st.success("주차별 메인/배경 자동 배치 완료!")
 
-            # 배경(최대 5)
-            sel_routine = st.multiselect(
-                f"배경 (최대 5) — {label}",
-                options=goals_min_all,
-                default=current.get("routine", [])[:5],
-                key=f"wk_routine_{wk}"
-            )
-            if len(sel_routine) > 5:
-                st.warning("배경은 최대 5개까지 선택 가능합니다. 처음 5개만 반영돼요.")
-                sel_routine = sel_routine[:5]
-
-            st.session_state.weekly_plan[wk] = {"focus": sel_focus, "routine": sel_routine}
-
-# 커버리지 체크 (최대선 미배정/용량)
             if st.session_state.get("weekly_plan"):
                 cov_res = compute_coverage(weeks_map, st.session_state.weekly_plan, month_goals)
                 if not cov_res["capacity_ok"]:
                     st.error(
-                        f"최대선 개수({cov_res['num_max_goals']})가 이번달 포커스 슬롯 수({cov_res['total_focus_slots']})보다 많습니다. "
-                        "일부 최대선을 다음 달로 미루거나 우선순위를 조정하세요."
+                        f"최대선 개수({cov_res['num_max_goals']})가 이번달 포커스 슬롯 수({cov_res['total_focus_slots']})보다 많습니다. 우선순위를 조정하세요."
                     )
                 else:
                     st.success(
@@ -684,7 +610,6 @@ else:
 st.markdown("---")
 st.markdown("### ✅ 오늘의 실행 체크리스트")
 
-# 오늘 요일 텍스트 (월~일)
 _today2 = datetime.date.today()
 sel_day = DAYS_KR[min(_today2.weekday(), 6)]
 st.caption(f"오늘은 **{sel_day}요일**입니다.")

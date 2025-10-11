@@ -29,7 +29,8 @@ def _parse_pipe_or_lines(s: str):
         parts = [x.strip() for x in s.split("|")]
     else:
         parts = []
-        for sep in ["|", ","]:
+        for sep in ["
+", ","]:
             if sep in s:
                 parts = [x.strip() for x in s.split(sep)]
                 break
@@ -146,6 +147,54 @@ day_map, ordered_days = explode_tasks(df_plan)
 if not ordered_days:
     st.warning("유효한 '요일' 데이터가 없습니다.")
     st.stop()
+
+# ---------------------
+# Sticky Top — 전체 주간 플랜 요약 (항상 상단 고정)
+# ---------------------
+st.markdown(
+    """
+    <style>
+    .sticky-plan {position: sticky; top: 0; z-index: 999; background: var(--background-color); padding: 0.5rem 0.25rem; border-bottom: 1px solid rgba(0,0,0,0.08);} 
+    .sticky-card {padding: 0.5rem 0.75rem; border: 1px solid rgba(0,0,0,0.08); border-radius: 10px;}
+    .sticky-table {font-size: 0.92rem; width: 100%; border-collapse: collapse;}
+    .sticky-table th, .sticky-table td {padding: 6px 8px; vertical-align: top; border-bottom: 1px dashed rgba(0,0,0,0.06);} 
+    .day {font-weight: 600; white-space: nowrap;}
+    .muted {opacity: .7; font-size: .85rem;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# HTML 테이블 구성
+def _html_escape(s: str) -> str:
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&#39;")) if isinstance(s, str) else str(s)
+
+def _join_html_bullets(items):
+    if not items:
+        return "-"
+    return "<br>".join(["• " + _html_escape(x) for x in items])
+
+rows_html = []
+for d in ordered_days:
+    mains = day_map[d]["main"]
+    routines = day_map[d]["routine"]
+    rows_html.append(f"<tr><td class='day'>{_html_escape(d)}</td><td>{_join_html_bullets(mains)}</td><td>{_join_html_bullets(routines)}</td></tr>")
+
+top_html = f"""
+<div class='sticky-plan'>
+  <div class='sticky-card'>
+    <div><strong>📌 전체 주간 플랜</strong> <span class='muted'>(현재 파일: {_html_escape(active_name) if active_name else '-'} )</span></div>
+    <table class='sticky-table'>
+      <thead><tr><th>요일</th><th>메인</th><th>배경</th></tr></thead>
+      <tbody>
+        {''.join(rows_html)}
+      </tbody>
+    </table>
+  </div>
+</div>
+"""
+
+st.markdown(top_html, unsafe_allow_html=True)
 
 # ---------------------
 # Daily Checklist UI

@@ -751,7 +751,10 @@ else:
 # (섹션: "🗓 ... — 월-일 가로 블록 + 상세 플랜" 바로 아래에 붙이세요)
 # ===============================
 
-st.markdown("#### ✍️ 이 주의 요일별 상세 플랜 편집")
+# ===============================
+# 📋 이 주의 상세 플랜 (표로 직접 편집, 자동제안 사용 안 함)
+# ===============================
+
 st.markdown("#### ✍️ 이 주의 상세 플랜 (표로 직접 편집)")
 
 # 세션 가드
@@ -763,6 +766,12 @@ if selected_week_key not in st.session_state.day_detail:
 def _join_for_cell(items: list[str]) -> str:
     """표에 보여줄 기본 문자열: ' | '로 조인"""
     return " | ".join(items) if items else ""
+
+def _safe_parse_cell(val):
+    """표에서 받은 셀 값을 리스트로 안전 변환 (NaN/빈칸 처리)"""
+    if val is None or (isinstance(val, float) and pd.isna(val)):
+        return []
+    return _parse_pipe_or_lines(str(val))
 
 # 1) 현재 상태 → 표 데이터 구성 (자동제안 사용 X)
 table_rows = []
@@ -779,12 +788,12 @@ for i, d in enumerate(DAYS_KR):
 
 df_edit = pd.DataFrame(table_rows)
 
-# 2) 표 에디터 렌더 (요일/날짜는 읽기전용)
+# 2) 표 에디터 렌더 (요일/날짜는 읽기전용, 7행 고정)
 edited = st.data_editor(
     df_edit,
     column_config={
-        "요일": st.column_config.TextColumn(disabled=True, width="small"),
-        "날짜": st.column_config.TextColumn(disabled=True, width="small"),
+        "요일": st.column_config.TextColumn(disabled=True),
+        "날짜": st.column_config.TextColumn(disabled=True),
         "상세 플랜(메인)": st.column_config.TextAreaColumn(
             help="여러 항목은 | 또는 줄바꿈/콤마로 구분",
             max_chars=2000,
@@ -803,10 +812,10 @@ edited = st.data_editor(
 )
 
 # 3) 표에서 수정한 값 → 세션 상태 반영
-for _, row in edited.iterrows():
+for _, row in edited.fillna("").iterrows():
     day = row["요일"]
-    st.session_state.day_detail[selected_week_key][day]["main"] = _parse_pipe_or_lines(row["상세 플랜(메인)"])
-    st.session_state.day_detail[selected_week_key][day]["routine"] = _parse_pipe_or_lines(row["상세 플랜(배경)"])
+    st.session_state.day_detail[selected_week_key][day]["main"] = _safe_parse_cell(row["상세 플랜(메인)"])
+    st.session_state.day_detail[selected_week_key][day]["routine"] = _safe_parse_cell(row["상세 플랜(배경)"])
 
 # 4) (선택) 현재 표 그대로 CSV 내보내기
 csv_week = edited.to_csv(index=False).encode("utf-8-sig")
@@ -815,78 +824,7 @@ st.download_button(
     data=csv_week,
     file_name=f"week_detail_table_{selected_week_key}.csv",
     mime="text/csv",
- )
-# # 안전 가드
-# if "day_detail" not in st.session_state:
-#     st.session_state.day_detail = {}
-# if selected_week_key not in st.session_state.day_detail:
-#     st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
-
-# def _join_list_for_input(items: list[str]) -> str:
-#     """텍스트 입력 기본값: ' | '로 조인. (가독성 좋고, 우리 파서와 호환)"""
-#     return " | ".join(items) if items else ""
-
-# # 편집 도움말
-# with st.expander("입력 가이드 보기", expanded=False):
-#     st.markdown(
-#         "- 한 칸에 여러 항목을 적을 땐 `|` 로 구분해 주세요. (예: `리포트 초안 | 데이터 정리`)\n"
-#         "- 줄바꿈이나 `,` 로 적어도 자동으로 분리됩니다.\n"
-#         "- 왼쪽은 **메인**, 오른쪽은 **배경**입니다.\n"
-#         "- 저장 버튼 없이 입력 즉시 상태에 반영됩니다."
-#     )
-
-# # 요일별 에디터
-# for i, d in enumerate(DAYS_KR):
-#     date_label = f"{week_dates[i].month}/{week_dates[i].day}" if i < len(week_dates) else ""
-#     st.markdown(f"**{d} ({date_label})**")
-
-#     # 현재 상세 값
-#     cur_main = list(st.session_state.day_detail[selected_week_key][d]["main"])
-#     cur_routine = list(st.session_state.day_detail[selected_week_key][d]["routine"])
-
-#     # 자동 제안(기본 블록)
-#     auto_items = default_blocks.get(d, [])
-#     auto_main = [x for x in auto_items if not x.startswith("배경:")]
-#     auto_routine = [x for x in auto_items if x.startswith("배경:")]
-
-#     # 입력 기본값: 상세가 있으면 상세, 없으면 자동 제안
-#     default_main_text = _join_list_for_input(cur_main if cur_main else auto_main)
-#     default_routine_text = _join_list_for_input(cur_routine if cur_routine else auto_routine)
-
-#     c1, c2 = st.columns(2)
-#     with c1:
-#         main_text = st.text_area(
-#             f"상세 플랜(메인) — {d}",
-#             value=default_main_text,
-#             height=80,
-#             key=f"{selected_week_key}_{d}_main_input"
-#         )
-#     with c2:
-#         routine_text = st.text_area(
-#             f"상세 플랜(배경) — {d}",
-#             value=default_routine_text,
-#             height=80,
-#             key=f"{selected_week_key}_{d}_routine_input"
-#         )
-
-#     # 입력 → 리스트 파싱 → 세션 반영 (입력 즉시 반영)
-#     st.session_state.day_detail[selected_week_key][d]["main"] = _parse_pipe_or_lines(main_text)
-#     st.session_state.day_detail[selected_week_key][d]["routine"] = _parse_pipe_or_lines(routine_text)
-
-#     # 빠른 편의 버튼
-#     bc1, bc2, bc3 = st.columns([1, 1, 6])
-#     with bc1:
-#         if st.button("자동 제안으로 채우기", key=f"{selected_week_key}_{d}_fill_auto"):
-#             st.session_state.day_detail[selected_week_key][d]["main"] = list(auto_main)
-#             st.session_state.day_detail[selected_week_key][d]["routine"] = list(auto_routine)
-#             st.rerun()
-#     with bc2:
-#         if st.button("비우기", key=f"{selected_week_key}_{d}_clear"):
-#             st.session_state.day_detail[selected_week_key][d]["main"] = []
-#             st.session_state.day_detail[selected_week_key][d]["routine"] = []
-#             st.rerun()
-
-#     st.divider()
+)
 
 
 # Weekly table (day-wise)

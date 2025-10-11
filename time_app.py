@@ -747,37 +747,92 @@ else:
     default_blocks = {d: [] for d in DAYS_KR}
 
 # Weekly table (day-wise)
-st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")
+# 📊 이 주 요약표 (상세/자동/최종 + 진행현황)
+# ===============================
+st.markdown("### ✅ 이 주 요약표 (상세/자동/최종 + 진행현황)")
 st.markdown("---")
+
 rows = []
+
+# 안전 가드
+if "completed_by_day" not in st.session_state:
+    st.session_state.completed_by_day = {}
 if not week_dates:
     today = datetime.date.today()
     week_dates = [today + datetime.timedelta(days=i) for i in range(7)]
 
-if selected_week_key not in st.session_state.day_detail:
-    st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
-
 for i, d in enumerate(DAYS_KR):
-    date_str = f"{week_dates[i].month}/{week_dates[i].day}"
-    detail_main = st.session_state.day_detail[selected_week_key][d]["main"]
-    detail_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
+    date_obj = week_dates[i]
+    date_disp = f"{date_obj.month}/{date_obj.day}"
 
-    if not detail_main and not detail_routine:
-        auto_items = default_blocks.get(d, [])
-        detail_main = [x for x in auto_items if not x.startswith("배경:")]
-        detail_routine = [x for x in auto_items if x.startswith("배경:")]
+    # 1) 상세(CSV/사용자 입력)
+    detail_main = list(st.session_state.day_detail[selected_week_key][d]["main"])
+    detail_routine = list(st.session_state.day_detail[selected_week_key][d]["routine"])
+
+    # 2) 자동(default blocks)
+    auto_items = default_blocks.get(d, [])
+    auto_main = [x for x in auto_items if not x.startswith("배경:")]
+    auto_routine = [x for x in auto_items if x.startswith("배경:")]
+
+    # 3) 최종(상세 우선 + 자동 보강, 중복 제거)
+    def _dedupcat(primary, fallback):
+        out, seen = [], set()
+        for v in primary + fallback:
+            if v not in seen:
+                out.append(v)
+                seen.add(v)
+        return out
+
+    final_main = _dedupcat(detail_main, auto_main)
+    final_routine = _dedupcat(detail_routine, auto_routine)
+
+    # 4) 진행현황(완료/총계, 달성률)
+    store_key = (selected_week_key, date_obj.isoformat())
+    completed = st.session_state.completed_by_day.get(store_key, set())
+    total_tasks = len(final_main) + len(final_routine)
+
+    # 체크박스 라벨 규칙과 동일하게 집계
+    done_main = sum((f"[메인] {t}" in completed) for t in final_main)
+    # 최종 라벨에서는 '배경:' 접두를 떼고 체크라벨과 매칭
+    done_routine = 0
+    for t in final_routine:
+        clean = t.replace("배경:", "").strip()
+        if f"[배경] {clean}" in completed:
+            done_routine += 1
+
+    done_cnt = done_main + done_routine
+    rate = int(done_cnt / total_tasks * 100) if total_tasks else 0
 
     rows.append({
         "요일": d,
-        "날짜": date_str,
-        "상세 플랜(메인)": " | ".join(detail_main) if detail_main else "-",
-        "상세 플랜(배경)": " | ".join(detail_routine) if detail_routine else "-",
+        "날짜": date_disp,
+
+        # 메인
+        "메인(상세)": " | ".join(detail_main) if detail_main else "-",
+        "메인(자동)": " | ".join(auto_main) if auto_main else "-",
+        "메인(최종)": " | ".join(final_main) if final_main else "-",
+
+        # 배경
+        "배경(상세)": " | ".join(detail_routine) if detail_routine else "-",
+        "배경(자동)": " | ".join(auto_routine) if auto_routine else "-",
+        "배경(최종)": " | ".join(final_routine) if final_routine else "-",
+
+        # 진행현황
+        "완료/총계": f"{done_cnt}/{total_tasks}",
+        "달성률(%)": rate,
     })
 
 week_df = pd.DataFrame(rows)
 st.dataframe(week_df, use_container_width=True)
+
+# 내려받기 (최종 포함 요약본)
 csv = week_df.to_csv(index=False).encode("utf-8-sig")
-st.download_button("📥 이 주 계획 CSV 다운로드", data=csv, file_name=f"week_plan_{selected_week_key}.csv", mime="text/csv")
+st.download_button(
+    "📥 이 주 계획(상세·자동·최종·진행현황 포함) CSV 다운로드",
+    data=csv,
+    file_name=f"week_plan_full_{selected_week_key}.csv",
+    mime="text/csv"
+)
 
 # =========================
 # 4) Today checklist

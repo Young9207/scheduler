@@ -299,45 +299,45 @@ if "day_detail" not in st.session_state:
 
 uploaded_week_csv = st.file_uploader("📥 주간 계획표 CSV 업로드", type=["csv"], key="restore_weekly_plan")
 
-# # 버튼 없이 업로드 즉시 자동 적용되도록 변경
-# if uploaded_week_csv is not None:
-#     try:
-#         uploaded_week_csv.seek(0)
-#         try:
-#             df = pd.read_csv(uploaded_week_csv, encoding="utf-8-sig")
-#         except UnicodeDecodeError:
-#             uploaded_week_csv.seek(0)
-#             df = pd.read_csv(uploaded_week_csv, encoding="utf-8")
+# 버튼 없이 업로드 즉시 자동 적용되도록 변경
+if uploaded_week_csv is not None:
+    try:
+        uploaded_week_csv.seek(0)
+        try:
+            df = pd.read_csv(uploaded_week_csv, encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            uploaded_week_csv.seek(0)
+            df = pd.read_csv(uploaded_week_csv, encoding="utf-8")
 
-#         if not set(["요일", "상세 플랜(메인)", "상세 플랜(배경)"]).issubset(df.columns):
-#             st.warning("CSV에 필요한 컬럼이 없습니다.")
-#         else:
-#             match = re.search(r"week\d+", uploaded_week_csv.name)
-#             week_key = match.group(0) if match else "week_manual"
-#             DAYS_KR = ["월","화","수","목","금","토","일"]
+        if not set(["요일", "상세 플랜(메인)", "상세 플랜(배경)"]).issubset(df.columns):
+            st.warning("CSV에 필요한 컬럼이 없습니다.")
+        else:
+            match = re.search(r"week\d+", uploaded_week_csv.name)
+            week_key = match.group(0) if match else "week_manual"
+            DAYS_KR = ["월","화","수","목","금","토","일"]
 
-#             # 세션 유지형 day_detail 보장
-#             if "day_detail" not in st.session_state:
-#                 st.session_state.day_detail = {}
-#             if week_key not in st.session_state.day_detail:
-#                 st.session_state.day_detail[week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+            # 세션 유지형 day_detail 보장
+            if "day_detail" not in st.session_state:
+                st.session_state.day_detail = {}
+            if week_key not in st.session_state.day_detail:
+                st.session_state.day_detail[week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
 
-#             # CSV → 세션에 저장
-#             for _, row in df.iterrows():
-#                 day = str(row["요일"]).strip()
-#                 if not day or day not in DAYS_KR:
-#                     continue
-#                 st.session_state.day_detail[week_key][day]["main"] = _parse_pipe_or_lines(row["상세 플랜(메인)"])
-#                 st.session_state.day_detail[week_key][day]["routine"] = _parse_pipe_or_lines(row["상세 플랜(배경)"])
+            # CSV → 세션에 저장
+            for _, row in df.iterrows():
+                day = str(row["요일"]).strip()
+                if not day or day not in DAYS_KR:
+                    continue
+                st.session_state.day_detail[week_key][day]["main"] = _parse_pipe_or_lines(row["상세 플랜(메인)"])
+                st.session_state.day_detail[week_key][day]["routine"] = _parse_pipe_or_lines(row["상세 플랜(배경)"])
 
-#             # 주차 키 저장 (rerun 대비)
-#             st.session_state["selected_week_key_auto"] = week_key
-#             st.session_state["last_uploaded_week_csv"] = uploaded_week_csv.name
+            # 주차 키 저장 (rerun 대비)
+            st.session_state["selected_week_key_auto"] = week_key
+            st.session_state["last_uploaded_week_csv"] = uploaded_week_csv.name
 
-#             st.success(f"✅ '{week_key}' 주간 계획표 자동 적용 완료!")
+            st.success(f"✅ '{week_key}' 주간 계획표 자동 적용 완료!")
 
-#     except Exception as e:
-#         st.error(f"CSV 처리 오류: {e}")
+    except Exception as e:
+        st.error(f"CSV 처리 오류: {e}")
 
     # ✅ 업로드한 주간 계획표를 이 주 요약표와 자동 연결
 if uploaded_week_csv is not None:

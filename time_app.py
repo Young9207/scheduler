@@ -325,33 +325,33 @@ def _build_virtual_plan(base_plan, suggestions, swaps, month_goals):
 
     return virtual, applied
     
-# def generate_calendar_weeks(year: int, month: int):
-#     weeks = {}
-#     first_day = datetime.date(year, month, 1)
-#     last_day = datetime.date(year, month, calendar.monthrange(year, month)[1])
-#     start_of_first_week = first_day - datetime.timedelta(days=first_day.weekday())
-#     current_start = start_of_first_week
-#     week_num = 1
-#     while current_start <= last_day:
-#         current_end = current_start + datetime.timedelta(days=6)
-#         label = f"{week_num}주차 ({current_start.month}/{current_start.day}~{current_end.month}/{current_end.day})"
-#         weeks[label] = f"week{week_num}"
-#         current_start += datetime.timedelta(days=7)
-#         week_num += 1
-#     return weeks
-def generate_calendar_weeks(year: int, month: int, week_start: int = 0):
-    """
-    week_start: 0=월요일, 6=일요일
-    반환: 각 주에 대해 (start_date, end_date, days[list[date]]) 튜플 리스트
-    - monthdatescalendar는 해당 월을 덮는 모든 주를 반환(이웃달 날짜 포함)
-    """
-    cal = calendar.Calendar(firstweekday=week_start)
-    weeks = []
-    for week_days in cal.monthdatescalendar(year, month):
-        start = week_days[0]
-        end = week_days[-1]
-        weeks.append((start, end, week_days))
+def generate_calendar_weeks(year: int, month: int):
+    weeks = {}
+    first_day = datetime.date(year, month, 1)
+    last_day = datetime.date(year, month, calendar.monthrange(year, month)[1])
+    start_of_first_week = first_day - datetime.timedelta(days=first_day.weekday())
+    current_start = start_of_first_week
+    week_num = 1
+    while current_start <= last_day:
+        current_end = current_start + datetime.timedelta(days=6)
+        label = f"{week_num}주차 ({current_start.month}/{current_start.day}~{current_end.month}/{current_end.day})"
+        weeks[label] = f"week{week_num}"
+        current_start += datetime.timedelta(days=7)
+        week_num += 1
     return weeks
+# def generate_calendar_weeks(year: int, month: int, week_start: int = 0):
+#     """
+#     week_start: 0=월요일, 6=일요일
+#     반환: 각 주에 대해 (start_date, end_date, days[list[date]]) 튜플 리스트
+#     - monthdatescalendar는 해당 월을 덮는 모든 주를 반환(이웃달 날짜 포함)
+#     """
+#     cal = calendar.Calendar(firstweekday=week_start)
+#     weeks = []
+#     for week_days in cal.monthdatescalendar(year, month):
+#         start = week_days[0]
+#         end = week_days[-1]
+#         weeks.append((start, end, week_days))
+#     return weeks
 
 # --- 기본 변수들 ---
 month_map = {"1월": 1, "2월": 2, "3월": 3, "4월": 4, "5월": 5, "6월": 6,

@@ -13,10 +13,6 @@ from collections import defaultdict
 STATE_FILE = Path("state_storage.json")
 STATE_KEYS = ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]
 
-match = re.search(r"week\d+", uploaded_week_csv.name)
-week_key = match.group(0) if match else "week_manual"
-
-
 
 def _parse_pipe_or_lines(s: str):
     if not s:
@@ -671,11 +667,14 @@ if uploaded_file:
             if not set(["요일", "상세 플랜(메인)", "상세 플랜(배경)"]).issubset(df.columns):
                 st.warning("CSV에 필요한 컬럼(요일, 상세 플랜(메인), 상세 플랜(배경))이 없습니다.")
             else:
-                df = df.fillna("")
-                df["요일"] = df["요일"].astype(str).str.strip()
-                week_key = Path(uploaded_week_csv.name).stem.split("_")[-1]  # 예: week_plan_week2-2.csv → 'week2-2'
+                match = re.search(r"week\d+", uploaded_week_csv.name)
+                week_key = match.group(0) if match else "week_manual"
+
+                # week_key = Path(uploaded_week_csv.name).stem.split("_")[-1]  # 예: week_plan_week2-2.csv → 'week2-2'
                 if week_key not in st.session_state.day_detail:
                     st.session_state.day_detail[week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+                df = df.fillna("")
+                df["요일"] = df["요일"].astype(str).str.strip()
     
                 for _, row in df.iterrows():
                     day = str(row["요일"]).strip()

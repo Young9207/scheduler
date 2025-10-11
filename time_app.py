@@ -303,6 +303,63 @@ st.set_page_config(page_title="Time Focus Flow", layout="wide")
 st.title("🧠 주간 시간관리 웹앱")
 st.markdown("분기/월 목표에서 이번 주의 메인 목표를 선택하고, 실행 배경을 설계하세요.")
 
+# --- [NEW] 이미 생성된 주간 계획표 업로드 전용 섹션 (엑셀 없이도 가능) ---
+st.markdown("### 📦 이미 뽑아둔 주간 계획표 불러오기 (엑셀 없이 바로 진입 가능)")
+
+if "day_detail" not in st.session_state:
+    st.session_state.day_detail = {}
+
+uploaded_week_csv = st.file_uploader(
+    "📥 주간 계획표 CSV 업로드 (예: week_plan_week2.csv, week_plan_week3.csv)",
+    type=["csv"],
+    key="restore_weekly_plan"
+)
+
+if uploaded_week_csv is not None and st.button("✅ 불러온 주간 계획표 적용"):
+    import pandas as pd, re
+    try:
+        uploaded_week_csv.seek(0)
+        try:
+            df = pd.read_csv(uploaded_week_csv, encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            uploaded_week_csv.seek(0)
+            df = pd.read_csv(uploaded_week_csv, encoding="utf-8")
+
+        # 필수 컬럼 확인
+        if not set(["요일", "상세 플랜(메인)", "상세 플랜(배경)"]).issubset(df.columns):
+            st.warning("CSV에 '요일', '상세 플랜(메인)', '상세 플랜(배경)' 컬럼이 있어야 합니다.")
+        else:
+            # 파일명에서 week_key 추출
+            match = re.search(r"week\d+", uploaded_week_csv.name)
+            week_key = match.group(0) if match else "week_manual"
+
+            # 기본 구조 준비
+            DAYS_KR = ["월", "화", "수", "목", "금", "토", "일"]
+            st.session_state.day_detail[week_key] = {
+                d: {"main": [], "routine": []} for d in DAYS_KR
+            }
+
+            df = df.fillna("")
+            df["요일"] = df["요일"].astype(str).str.strip()
+
+            # CSV 내용 → 세션에 반영
+            for _, row in df.iterrows():
+                day = str(row["요일"]).strip()
+                if not day or day not in DAYS_KR:
+                    continue
+                main_items = _parse_pipe_or_lines(row["상세 플랜(메인)"])
+                routine_items = _parse_pipe_or_lines(row["상세 플랜(배경)"])
+                st.session_state.day_detail[week_key][day]["main"] = main_items
+                st.session_state.day_detail[week_key][day]["routine"] = routine_items
+
+            # 자동 주차 선택 변수도 설정 (나중에 아래 섹션에서 활용 가능)
+            st.session_state["selected_week_key_auto"] = week_key
+            st.success(f"✅ '{week_key}' 주간 계획표를 성공적으로 불러왔습니다. 엑셀 선택 없이 바로 진행할 수 있습니다!")
+
+    except Exception as e:
+        st.error(f"CSV 처리 오류: {e}")
+
+
 # 1. 엑셀 업로드
 uploaded_file = st.file_uploader("📁 엑셀 파일 업로드", type=["xlsx"])
 
@@ -765,21 +822,46 @@ if uploaded_file:
 
 
     st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")
-    st.markdown("---")        
+    st.markdown("---")
+    
     rows = []
+    
+    # --- 안전하게 week_key 확보 ---
+    selected_week_key = (
+        st.session_state.get("selected_week_key_auto")
+        or locals().get("selected_week_key")
+        or "week_manual"
+    )
+    
+    # --- day_detail 구조 보장 ---
+    if "day_detail" not in st.session_state:
+        st.session_state.day_detail = {}
+    
+    if selected_week_key not in st.session_state.day_detail:
+        # 만약 CSV로도 로드되지 않은 상태라면 기본 구조라도 채워넣음
+        st.session_state.day_detail[selected_week_key] = {
+            d: {"main": [], "routine": []} for d in DAYS_KR
+        }
+    
+    # --- week_dates 안전 처리 ---
+    if "week_dates" not in locals() or not week_dates:
+        # fallback: 오늘 기준으로 임시 생성 (요일 맞추기용)
+        today = datetime.date.today()
+        week_dates = [today + datetime.timedelta(days=i) for i in range(7)]
+    
+    # --- 요약 테이블 생성 ---
     for i, d in enumerate(DAYS_KR):
         date_str = f"{week_dates[i].month}/{week_dates[i].day}" if week_dates else "-"
     
-        # 자동 제안(메인/배경 분리)
-        auto_items = default_blocks.get(d, []) if isinstance(default_blocks, dict) else []
+        # 자동 제안 (기본 블록이 없을 수 있음)
+        auto_items = default_blocks.get(d, []) if "default_blocks" in locals() and isinstance(default_blocks, dict) else []
         auto_main = [x for x in auto_items if not x.startswith("배경:")]
         auto_routine = [x for x in auto_items if x.startswith("배경:")]
     
-        # 상세 플랜(메인/배경)
-        detail_main = st.session_state.day_detail[selected_week_key][d]["main"]
-        detail_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
+        # 상세 플랜 (세션에서 가져오기, 없으면 빈 리스트)
+        detail_main = st.session_state.day_detail.get(selected_week_key, {}).get(d, {}).get("main", [])
+        detail_routine = st.session_state.day_detail.get(selected_week_key, {}).get(d, {}).get("routine", [])
     
-        # 최종 ‘해야할 일’은 상세 우선, 없으면 자동 제안 사용
         final_main = detail_main if detail_main else auto_main
         final_routine = detail_routine if detail_routine else auto_routine
     
@@ -803,6 +885,7 @@ if uploaded_file:
         file_name=f"week_plan_{selected_week_key}.csv",
         mime="text/csv"
     )
+
 
    
 

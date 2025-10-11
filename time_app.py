@@ -741,72 +741,71 @@ if uploaded_file:
     st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")
     st.markdown("---")
     
+    DAYS_KR = ["월","화","수","목","금","토","일"]
     rows = []
     
-    # --- 안전하게 week_key 확보 ---
     selected_week_key = (
         st.session_state.get("selected_week_key_auto")
         or locals().get("selected_week_key")
         or "week_manual"
     )
     
-    # --- day_detail 구조 보장 ---
     if "day_detail" not in st.session_state:
         st.session_state.day_detail = {}
-    
     if selected_week_key not in st.session_state.day_detail:
-        # 만약 CSV로도 로드되지 않은 상태라면 기본 구조라도 채워넣음
-        st.session_state.day_detail[selected_week_key] = {
-            d: {"main": [], "routine": []} for d in DAYS_KR
-        }
+        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
     
-    # --- week_dates 안전 처리 ---
     if "week_dates" not in locals() or not week_dates:
-        # fallback: 오늘 기준으로 임시 생성 (요일 맞추기용)
         today = datetime.date.today()
         week_dates = [today + datetime.timedelta(days=i) for i in range(7)]
+    if "default_blocks" not in locals():
+        default_blocks = {d: [] for d in DAYS_KR}
     
-    # --- 요약 테이블 생성 ---
     for i, d in enumerate(DAYS_KR):
-        date_str = f"{week_dates[i].month}/{week_dates[i].day}" if week_dates else "-"
-    
-        # 자동 제안 (기본 블록이 없을 수 있음)
-        auto_items = default_blocks.get(d, []) if "default_blocks" in locals() and isinstance(default_blocks, dict) else []
+        date_str = f"{week_dates[i].month}/{week_dates[i].day}"
+        auto_items = default_blocks.get(d, [])
         auto_main = [x for x in auto_items if not x.startswith("배경:")]
         auto_routine = [x for x in auto_items if x.startswith("배경:")]
-    
-        # 상세 플랜 (세션에서 가져오기, 없으면 빈 리스트)
-        detail_main = st.session_state.day_detail.get(selected_week_key, {}).get(d, {}).get("main", [])
-        detail_routine = st.session_state.day_detail.get(selected_week_key, {}).get(d, {}).get("routine", [])
-    
+        detail_main = st.session_state.day_detail[selected_week_key][d]["main"]
+        detail_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
         final_main = detail_main if detail_main else auto_main
         final_routine = detail_routine if detail_routine else auto_routine
-    
         rows.append({
             "요일": d,
             "날짜": date_str,
-            "자동 제안(메인)": " | ".join(auto_main) if auto_main else "-",
-            "자동 제안(배경)": " | ".join(auto_routine) if auto_routine else "-",
             "상세 플랜(메인)": " | ".join(detail_main) if detail_main else "-",
             "상세 플랜(배경)": " | ".join(detail_routine) if detail_routine else "-",
         })
     
     week_df = pd.DataFrame(rows)
     st.dataframe(week_df, use_container_width=True)
-    
-    # (선택) CSV 다운로드
     csv = week_df.to_csv(index=False).encode("utf-8-sig")
-    st.download_button(
-        "📥 이 주 계획 CSV 다운로드",
-        data=csv,
-        file_name=f"week_plan_{selected_week_key}.csv",
-        mime="text/csv"
-    )
-
-
-   
-
-    # # ---
+    st.download_button("📥 이 주 계획 CSV 다운로드", data=csv, file_name=f"week_plan_{selected_week_key}.csv", mime="text/csv")
+    
+    # ✅ [수정③] 오늘의 실행 체크리스트 접근 안전화
+    st.markdown("---")
+    st.markdown("### ✅ 오늘의 실행 체크리스트")
+    
+    today = datetime.date.today()
+    days_map = {0:"월",1:"화",2:"수",3:"목",4:"금",5:"토",6:"일"}
+    sel_day = days_map[today.weekday()]
+    
+    if selected_week_key not in st.session_state.day_detail:
+        st.session_state.day_detail[selected_week_key] = {day: {"main": [], "routine": []} for day in DAYS_KR}
+    if sel_day not in st.session_state.day_detail[selected_week_key]:
+        st.session_state.day_detail[selected_week_key][sel_day] = {"main": [], "routine": []}
+    
+    detail_main = st.session_state.day_detail[selected_week_key][sel_day]["main"]
+    detail_routine = st.session_state.day_detail[selected_week_key][sel_day]["routine"]
+    
+    st.write(f"🗓 오늘({sel_day})의 메인: ", " | ".join(detail_main) if detail_main else "없음")
+    st.write(f"🌿 오늘의 배경: ", " | ".join(detail_routine) if detail_routine else "없음")
+    
+    if "state_loaded_once" not in st.session_state:
+        load_state()
+        st.session_state["state_loaded_once"] = True
+    
+    save_state()
     
     st.markdown("---")
     st.markdown("### ✅ 오늘의 실행 체크리스트")

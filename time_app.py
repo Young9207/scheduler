@@ -591,7 +591,7 @@ if uploaded_file:
             )
         st.session_state.weekly_plan[key] = {"focus": focus, "routine": routine}
         
-    current_week_label = find_current_week_label(weeks)
+        current_week_label = find_current_week_label(weeks)
 
     
         # --- [6] 전체 요약 ---

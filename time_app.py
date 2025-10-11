@@ -20,6 +20,39 @@ MONTH_MAP = {f"{i}월": i for i in range(1, 13)}
 # =========================
 # Utilities
 # =========================
+def _build_virtual_plan(base_plan, suggestions, swaps, month_goals):
+    """원본을 건드리지 않고 제안을 적용한 가상 계획을 생성"""
+    import copy
+    virtual = copy.deepcopy(base_plan)
+    applied = []
+
+    # 1) 빈 슬롯에 최대선 추가
+    for wk, gid in suggestions:
+        label = month_goals[gid]["label"]
+        plan = virtual.get(wk, {"focus": [], "routine": []})
+        if label not in plan["focus"] and len(plan["focus"]) < 2:
+            plan["focus"].append(label)
+            applied.append(("add", wk, label, "빈 슬롯에 최대선 배치"))
+        virtual[wk] = plan
+
+    # 2) routine → focus 승격 (2개 제한 유지)
+    for wk, gid in swaps:
+        label = month_goals[gid]["label"]
+        plan = virtual.get(wk, {"focus": [], "routine": []})
+        # routine에서 제거
+        plan["routine"] = [x for x in plan.get("routine", []) if _normalize_text(x) != gid]
+        if label not in plan["focus"]:
+            plan["focus"].append(label)
+            if len(plan["focus"]) > 2:
+                # 가장 앞쪽 것을 잘라서 2개 유지
+                dropped = plan["focus"][:-2]
+                plan["focus"] = plan["focus"][-2:]
+                for dlab in dropped:
+                    applied.append(("drop", wk, dlab, "과밀 조정(2개 제한)"))
+            applied.append(("promote", wk, label, "routine→focus 승격"))
+        virtual[wk] = plan
+
+    return virtual, applied
 
 def generate_weekly_detail(selected_week_key, week_dates):
     """메인/루틴 기반으로 주간 디테일 자동 생성"""

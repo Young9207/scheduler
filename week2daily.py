@@ -4,24 +4,27 @@ import datetime
 import hashlib
 import io
 from pathlib import Path
+import re
 
 # ==================================================
-# 주간 체크리스트 (CSV 기반 라이트 버전)
-#   - 입력: 주간 계획 CSV (컬럼: 요일, 상세 플랜(메인), 상세 플랜(배경))
-#   - 동작: 요일별 체크리스트 + 일간/주간 진행률 바
+# 주간 체크리스트 — 듀얼 CSV (A: virtual.csv, B: week.csv)
+#   - 두 CSV를 세션에 고정 저장 (다른 파일 올리기 전까지 유지)
+#   - 상단 고정(Sticky) 요약: A/B 둘 다 항상 보여줌
+#   - 체크는 '활성 파일' 기준으로 수행 → 일간/주간 진행률 표시
+#   - 내보내기: 현재 진행상태 CSV로 다운로드
 # ==================================================
 
-st.set_page_config(page_title="주간 체크리스트 (CSV 라이트)", layout="wide")
-st.title("✅ 주간 체크리스트 — CSV만으로 간단하게")
-st.caption("업로드한 주간 계획 CSV를 기반으로, 요일별 체크와 진행률을 확인합니다.")
+st.set_page_config(page_title="주간 체크리스트 — 듀얼 CSV", layout="wide")
+st.title("✅ 주간 체크리스트 — 듀얼 CSV (A: virtual, B: week)")
+st.caption("A/B 두 CSV를 올려 상단에서 모두 보면서, 선택한 파일로 체크와 진행률을 관리합니다.")
 
 DAYS_KR = ["월","화","수","목","금","토","일"]
 
 # ---------------------
 # Helpers
 # ---------------------
-
 def _parse_pipe_or_lines(s: str):
+    """Split by '|', or fallback to newline/comma."""
     if s is None or (isinstance(s, float) and pd.isna(s)):
         return []
     s = str(s)
@@ -37,30 +40,71 @@ def _parse_pipe_or_lines(s: str):
             parts = [s.strip()]
     return [x for x in parts if x]
 
-
 def _stable_task_key(week_id: str, day: str, prefix: str, text: str) -> str:
     raw = f"{week_id}|{day}|{prefix}|{text}"
     return "chk_" + hashlib.md5(raw.encode("utf-8")).hexdigest()
 
+def _norm_header(s: str) -> str:
+    s = str(s).strip().lower()
+    s = re.sub(r"\s+", "", s)
+    return s.replace("_", "")
 
-def load_week_plan_from_csv(file) -> pd.DataFrame:
+def _pick_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
+    # 1) 정규화된 완전일치
+    by_norm = {_norm_header(c): c for c in df.columns}
+    for cand in candidates:
+        k = _norm_header(cand)
+        if k in by_norm:
+            return by_norm[k]
+    # 2) 부분 포함(후순위)
+    for c in df.columns:
+        nc = _norm_header(c)
+        if any(_norm_header(x) in nc for x in candidates):
+            return c
+    return None
+
+def load_flexible_plan(file, prefer: str = "A") -> pd.DataFrame:
+    """
+    Flexible loader for A(virtual.csv) and B(week.csv).
+    Maps headers to: [요일, 상세 플랜(메인), 상세 플랜(배경)].
+    prefer = 'A' or 'B' controls candidate priority.
+    """
     file.seek(0)
     try:
         df = pd.read_csv(file, encoding="utf-8-sig")
     except UnicodeDecodeError:
         file.seek(0)
         df = pd.read_csv(file, encoding="utf-8")
-    need = {"요일", "상세 플랜(메인)", "상세 플랜(배경)"}
-    if not need.issubset(df.columns):
-        raise ValueError("CSV에 '요일', '상세 플랜(메인)', '상세 플랜(배경)' 컬럼이 필요합니다.")
-    df = df.fillna("")
-    df["요일"] = df["요일"].astype(str).str.strip()
-    # 요일 정렬 보장
-    cat = pd.CategoricalDtype(categories=DAYS_KR, ordered=True)
-    df["요일"] = pd.Categorical(df["요일"], dtype=cat)
-    df = df.sort_values("요일")
-    return df.reset_index(drop=True)
 
+    # Candidate names per role
+    day_A  = ["요일", "day", "일자", "date"]
+    main_A = ["상세 플랜(메인)", "메인", "main", "main_tasks", "main task", "상세플랜메인"]
+    rout_A = ["상세 플랜(배경)", "배경", "routine", "background", "routine_tasks", "상세플랜배경"]
+
+    day_B  = ["요일", "day"]
+    main_B = ["상세 플랜(메인)", "메인", "main"]
+    rout_B = ["상세 플랜(배경)", "배경", "routine"]
+
+    if str(prefer).upper() == "A":
+        day_col  = _pick_col(df, day_A)  or _pick_col(df, day_B)
+        main_col = _pick_col(df, main_A) or _pick_col(df, main_B)
+        rout_col = _pick_col(df, rout_A) or _pick_col(df, rout_B)
+    else:
+        day_col  = _pick_col(df, day_B)  or _pick_col(df, day_A)
+        main_col = _pick_col(df, main_B) or _pick_col(df, main_A)
+        rout_col = _pick_col(df, rout_B) or _pick_col(df, rout_A)
+
+    missing = [name for name, col in [("요일", day_col), ("메인", main_col), ("배경", rout_col)] if col is None]
+    if missing:
+        raise ValueError(f"필수 컬럼을 찾을 수 없습니다: {', '.join(missing)} — CSV 헤더: {list(df.columns)}")
+
+    out = df[[day_col, main_col, rout_col]].copy()
+    out.columns = ["요일", "상세 플랜(메인)", "상세 플랜(배경)"]
+    out = out.fillna("")
+    cat = pd.CategoricalDtype(categories=DAYS_KR, ordered=True)
+    out["요일"] = pd.Categorical(out["요일"].astype(str).str.strip(), dtype=cat)
+    out = out.sort_values("요일").reset_index(drop=True)
+    return out
 
 def explode_tasks(df: pd.DataFrame):
     """Return dict: day -> {main: [...], routine: [...]} and ordered day list."""
@@ -75,112 +119,43 @@ def explode_tasks(df: pd.DataFrame):
         day_map[day] = {"main": mains, "routine": routines}
         if day not in ordered_days:
             ordered_days.append(day)
-    # DAYS_KR 순으로 재정렬
     ordered_days = [d for d in DAYS_KR if d in ordered_days]
     return day_map, ordered_days
 
-# === Flexible CSV loader for A(virtual.csv) / B(week.csv) ===
-import re
-
-def _norm(s: str) -> str:
-    s = str(s).strip().lower()
-    s = re.sub(r"\s+", "", s)
-    return s.replace("_", "")
-
-def _find_col(df: pd.DataFrame, candidates: list[str]):
-    cols = list(df.columns)
-    by_norm = { _norm(c): c for c in cols }
-    for cand in candidates:
-        key = _norm(cand)
-        if key in by_norm:
-            return by_norm[key]
-    # fuzzy contains as last resort
-    for c in cols:
-        nc = _norm(c)
-        if any(_norm(x) in nc for x in candidates):
-            return c
-    return None
-
-def load_flexible_plan(file, prefer: str = "A") -> pd.DataFrame:
-    """
-    Flexible loader that maps columns for:
-      - A (virtual.csv): supports 요일/day, 메인/main, 배경/routine 등 변형
-      - B (week.csv):    표준 요일/상세 플랜(메인)/상세 플랜(배경)
-    prefer="A" or "B" changes which candidate set is tried first.
-    """
-    file.seek(0)
-    try:
-        df = pd.read_csv(file, encoding="utf-8-sig")
-    except UnicodeDecodeError:
-        file.seek(0)
-        df = pd.read_csv(file, encoding="utf-8")
-
-    # Candidate names
-    day_A  = ["요일", "day", "일자", "date"]
-    main_A = ["상세 플랜(메인)", "메인", "main", "main_tasks", "main task", "상세플랜메인"]
-    rout_A = ["상세 플랜(배경)", "배경", "routine", "background", "routine_tasks", "상세플랜배경"]
-
-    day_B  = ["요일", "day"]
-    main_B = ["상세 플랜(메인)", "메인", "main"]
-    rout_B = ["상세 플랜(배경)", "배경", "routine"]
-
-    if prefer.upper() == "A":
-        day_col  = _find_col(df, day_A)  or _find_col(df, day_B)
-        main_col = _find_col(df, main_A) or _find_col(df, main_B)
-        rout_col = _find_col(df, rout_A) or _find_col(df, rout_B)
-    else:
-        day_col  = _find_col(df, day_B)  or _find_col(df, day_A)
-        main_col = _find_col(df, main_B) or _find_col(df, main_A)
-        rout_col = _find_col(df, rout_B) or _find_col(df, rout_A)
-
-    missing = [name for name, col in [("요일", day_col), ("메인", main_col), ("배경", rout_col)] if col is None]
-    if missing:
-        raise ValueError(f"필수 컬럼을 찾을 수 없습니다: {', '.join(missing)} — CSV 헤더명을 확인하세요.")
-
-    out = df[[day_col, main_col, rout_col]].copy()
-    out.columns = ["요일", "상세 플랜(메인)", "상세 플랜(배경)"]
-    out = out.fillna("")
-    cat = pd.CategoricalDtype(categories=["월","화","수","목","금","토","일"], ordered=True)
-    out["요일"] = pd.Categorical(out["요일"].astype(str).str.strip(), dtype=cat)
-    out = out.sort_values("요일").reset_index(drop=True)
-    return out
-
-
 # ---------------------
-# Sidebar — CSV 업로드
+# Sidebar — CSV 업로드 (A=virtual, B=week)
 # ---------------------
 with st.sidebar:
-    st.markdown("### 📎 주간 계획 CSV (2개 지원)")
+    st.markdown("### 📎 주간 계획 CSV (2개 지원: A=virtual.csv, B=week.csv)")
     colA, colB = st.columns(2)
     with colA:
-        uploaded_A = st.file_uploader("파일 A 업로드", type=["csv"], key="uploader_A")
+        uploaded_A = st.file_uploader("파일 A 업로드 (virtual.csv 용)", type=["csv"], key="uploader_A")
     with colB:
-        uploaded_B = st.file_uploader("파일 B 업로드", type=["csv"], key="uploader_B")
+        uploaded_B = st.file_uploader("파일 B 업로드 (week_plan 용)", type=["csv"], key="uploader_B")
 
     if "persisted_csv_A" not in st.session_state:
         st.session_state.persisted_csv_A = None  # {name, bytes}
     if "persisted_csv_B" not in st.session_state:
         st.session_state.persisted_csv_B = None
 
-    # 저장/해제 버튼
     c1, c2, c3 = st.columns([2,2,2])
     with c1:
-        if st.button("A 저장/갱신") and uploaded_A is not None:
+        if st.button("A 저장/갱신", use_container_width=True) and uploaded_A is not None:
             uploaded_A.seek(0)
             st.session_state.persisted_csv_A = {"name": uploaded_A.name, "bytes": uploaded_A.read()}
             st.success(f"A 고정: {uploaded_A.name}")
     with c2:
-        if st.button("B 저장/갱신") and uploaded_B is not None:
+        if st.button("B 저장/갱신", use_container_width=True) and uploaded_B is not None:
             uploaded_B.seek(0)
             st.session_state.persisted_csv_B = {"name": uploaded_B.name, "bytes": uploaded_B.read()}
             st.success(f"B 고정: {uploaded_B.name}")
     with c3:
-        if st.button("모두 해제"):
+        if st.button("모두 해제", use_container_width=True):
             st.session_state.persisted_csv_A = None
             st.session_state.persisted_csv_B = None
             st.success("두 파일 모두 해제됨")
 
-    st.caption("각각 다른 형식의 주간 플랜 CSV 두 개를 올려 고정할 수 있어요. 아래에서 어느 파일을 체크 대상으로 쓸지 선택합니다.")
+    st.caption("두 파일을 고정해두고 아래에서 활성(체크 대상)을 선택하세요. 업로드한 파일은 변경 전까지 유지됩니다.")
 
 # 활성 파일 선택
 active_choice = "A" if st.session_state.get("persisted_csv_A") else ("B" if st.session_state.get("persisted_csv_B") else None)
@@ -190,12 +165,11 @@ if active_choice is None:
 
 active_choice = st.radio("체크 대상 파일 선택", [c for c in ["A","B"] if st.session_state.get(f"persisted_csv_{c}")], horizontal=True)
 
-# 활성 파일/이름
+# 활성 & 보조 파일 핸들
 active_blob = st.session_state.get(f"persisted_csv_{active_choice}")
 active_file = io.BytesIO(active_blob["bytes"]) if active_blob else None
 active_name = active_blob["name"] if active_blob else None
 
-# 보조 파일(비활성)도 준비해 두기
 aux_choice = "B" if active_choice == "A" else "A"
 aux_blob = st.session_state.get(f"persisted_csv_{aux_choice}")
 aux_file = io.BytesIO(aux_blob["bytes"]) if aux_blob else None
@@ -215,17 +189,14 @@ if active_file is None:
 # ---------------------
 try:
     df_plan = load_flexible_plan(active_file, prefer=active_choice)
-    aux_plan = load_flexible_plan(aux_file, prefer=aux_choice)  # aux_file 있을 때만
-
 except Exception as e:
     st.error(f"활성 파일 읽기 오류: {e}")
     st.stop()
 
-# 보조 파일 파싱은 선택적
 aux_plan = None
 if aux_file is not None:
     try:
-        aux_plan = load_week_plan_from_csv(aux_file)
+        aux_plan = load_flexible_plan(aux_file, prefer=aux_choice)
     except Exception:
         aux_plan = None
 
@@ -236,10 +207,6 @@ if aux_plan is not None:
     with st.expander(f"🗂 보조 파일 미리보기 — {aux_name} ({aux_choice})", expanded=False):
         st.dataframe(aux_plan, use_container_width=True)
 
-st.caption(f"현재 파일: **{active_name}** (고정됨)")
-with st.expander("🔍 CSV 미리보기", expanded=False):
-    st.dataframe(df_plan, use_container_width=True)
-
 # 요일 → 태스크 매핑
 day_map, ordered_days = explode_tasks(df_plan)
 if not ordered_days:
@@ -247,7 +214,7 @@ if not ordered_days:
     st.stop()
 
 # ---------------------
-# Sticky Top — 전체 주간 플랜 요약 (항상 상단 고정, 2개 탭)
+# Sticky Top — 전체 주간 플랜 요약 (항상 상단 고정, A/B 모두)
 # ---------------------
 st.markdown(
     """
@@ -271,11 +238,9 @@ def _join_html_bullets(items):
         return "-"
     return "<br>".join(["• " + _html_escape(x) for x in items])
 
-# 빌더 함수
 def _make_plan_table(df, title, fname):
     if df is None:
         return f"<div class='sticky-card'><div><strong>{_html_escape(title)}</strong> — 없음</div></div>"
-    # explode
     tmp = {}
     for _, row in df.iterrows():
         d = str(row.get("요일", "")).strip()
@@ -283,8 +248,8 @@ def _make_plan_table(df, title, fname):
         routines = _parse_pipe_or_lines(row.get("상세 플랜(배경)", ""))
         if d:
             tmp[d] = {"main": mains, "routine": routines}
-    # order
-    order = [d for d in ["월","화","수","목","금","토","일"] if d in tmp]
+    order = [d for d in DAYS_KR if d in tmp]
+    rows_html = [f"<tr><td class='day'>{_html_escape(d)}</td><td>{_join_html_bullets(tmp[d]['main'])}</td><td>{_join_html_bullets(tmp[d]['routine'])}</td></tr>"] * 0
     rows_html = [f"<tr><td class='day'>{_html_escape(d)}</td><td>{_join_html_bullets(tmp[d]['main'])}</td><td>{_join_html_bullets(tmp[d]['routine'])}</td></tr>" for d in order]
     return f"""
     <div class='sticky-card'>
@@ -299,36 +264,35 @@ def _make_plan_table(df, title, fname):
 plan_html_active = _make_plan_table(df_plan, f"📌 전체 주간 플랜 — 활성({active_choice})", active_name)
 plan_html_aux = _make_plan_table(aux_plan, f"🗂 참고 플랜 — 보조({aux_choice})", aux_name)
 
-sticky_html = f"""
-<div class='sticky-plan'>
-  {plan_html_active}
-  {plan_html_aux}
-</div>
-"""
+st.markdown(
+    f"""
+    <div class='sticky-plan'>
+      {plan_html_active}
+      {plan_html_aux}
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
-st.markdown(sticky_html, unsafe_allow_html=True)
+# 상단: 현재 '활성' CSV 빠른 조작(다운로드/프리뷰)
+cols_top = st.columns([4,1])
+with cols_top[1]:
+    st.download_button(
+        "📥 활성 CSV 다운로드",
+        data=active_blob.get("bytes", b"") if active_blob else b"",
+        file_name=active_name or "week_from_csv.csv",
+        mime="text/csv",
+        use_container_width=True,
+        key="dl_active_csv_top",
+    )
 
-# 상단에 현재 CSV 자체도 바로 볼/받을 수 있게 버튼 제공
-if st.session_state.get("persisted_csv"):
-    active_bytes = st.session_state.persisted_csv.get("bytes", b"")
-    cols = st.columns([4,1])
-    with cols[1]:
-        st.download_button(
-            "📥 현재 CSV 다운로드",
-            data=active_bytes,
-            file_name=active_name or "week_from_csv.csv",
-            mime="text/csv",
-            use_container_width=True,
-            key="dl_active_csv_top",
-        )
-
-with st.expander("🗂 상단 빠른 미리보기 (원본 CSV 일부)", expanded=False):
+with st.expander("🗂 상단 빠른 미리보기 (활성 CSV 일부)", expanded=False):
+    _preview = None
     try:
-        import pandas as _pd
-        _preview = _pd.read_csv(io.BytesIO(st.session_state.persisted_csv["bytes"]), encoding="utf-8-sig")
+        _preview = pd.read_csv(io.BytesIO(active_blob["bytes"]), encoding="utf-8-sig")
     except Exception:
         try:
-            _preview = _pd.read_csv(io.BytesIO(st.session_state.persisted_csv["bytes"]))
+            _preview = pd.read_csv(io.BytesIO(active_blob["bytes"]))
         except Exception:
             _preview = None
     if _preview is not None:
@@ -337,24 +301,25 @@ with st.expander("🗂 상단 빠른 미리보기 (원본 CSV 일부)", expanded
         st.caption("CSV 미리보기를 표시할 수 없습니다.")
 
 # ---------------------
-# Daily Checklist UI
+# Daily Checklist UI (활성 파일 기준)
 # ---------------------
-# 오늘 요일 자동 인식 (수동 변경 가능)
 _today = datetime.date.today()
 auto_idx = min(_today.weekday(), 6)
-sel_day = st.radio("🗓 오늘 요일 선택", ordered_days, index=ordered_days.index(DAYS_KR[auto_idx]) if DAYS_KR[auto_idx] in ordered_days else 0, horizontal=True)
+sel_day = st.radio(
+    "🗓 오늘 요일 선택",
+    ordered_days,
+    index=ordered_days.index(DAYS_KR[auto_idx]) if DAYS_KR[auto_idx] in ordered_days else 0,
+    horizontal=True,
+)
 
-# 오늘 태스크
 main_tasks = day_map[sel_day]["main"]
 routine_tasks = day_map[sel_day]["routine"]
 all_tasks = [("[메인]", t) for t in main_tasks] + [("[배경]", t) for t in routine_tasks]
 
-# 체크 상태 컨테이너 확보
 if (week_id, sel_day) not in st.session_state.completed_by_day:
     st.session_state.completed_by_day[(week_id, sel_day)] = set()
 completed = st.session_state.completed_by_day[(week_id, sel_day)]
 
-# 체크박스 렌더
 st.subheader(f"{sel_day} 체크리스트")
 if not all_tasks:
     st.info("해당 요일에 등록된 태스크가 없습니다.")
@@ -368,10 +333,9 @@ else:
         else:
             completed.discard(label)
 
-    # 일간 진행률
     pct_day = int(len(completed) / len(all_tasks) * 100) if all_tasks else 0
     st.progress(pct_day)
-    st.write(f"📊 **{sel_day} 달성률**: {pct_day}%  ")
+    st.write(f"📊 **{sel_day} 달성률**: {pct_day}%")
 
 # ---------------------
 # Weekly Progress (전체 요일 집계)

@@ -35,6 +35,45 @@ def _normalize_text(s: str) -> str:
     s = re.sub(r"\s+", " ", s)
     return s
 
+# (보조) weekly_plan 기반으로 요일별 자동 제안 생성
+# (보조) weekly_plan 기반으로 요일별 자동 제안 생성
+def _build_default_blocks_from_weekplan(week_key: str):
+    DAYS = ["월","화","수","목","금","토","일"]
+    blocks = {d: [] for d in DAYS}
+    plan = st.session_state.weekly_plan.get(week_key, {"focus": [], "routine": []})
+    mains = plan.get("focus", [])[:2]
+    routines = plan.get("routine", [])
+
+    if mains:
+        main_a = mains[0]
+        main_b = mains[1] if len(mains) > 1 else None
+        assign = {
+            "월": [("메인", main_a)],
+            "화": [("메인", main_b if main_b else main_a)],
+            "수": [("메인", main_a)],
+            "목": [("메인", main_b if main_b else main_a)],
+            "금": [("메인-마무리/체크업", main_a)]
+        }
+        if main_b:
+            assign["금"].append(("메인-마무리/체크업", main_b))
+        for d, items in assign.items():
+            for tag, title in items:
+                blocks[d].append(f"{tag}: {title}")
+
+    # 주말 기본 제안
+    blocks["토"].append("보완/보충: 이번 주 미완료 항목 처리")
+    blocks["일"].append("회고/정리: 다음 주 준비")
+
+    # 배경 순환
+    if routines:
+        ri = 0
+        for d in DAYS:
+            blocks[d].append(f"배경: {routines[ri % len(routines)]}")
+            ri += 1
+    return blocks
+
+
+
 def build_month_goals(df):
     goals = {}
     seen = set()
@@ -290,6 +329,112 @@ if uploaded_week_csv is not None:
     except Exception as e:
         st.error(f"CSV 처리 오류: {e}")
 
+# --- 주차 플랜 CSV 업로드: weekly_plan 갱신 (가상/원본 포맷 모두 지원) ---
+st.markdown("### 📦 주차 플랜 CSV 업로드 (가상/원본 둘 다 지원)")
+
+uploaded_plan_csv = st.file_uploader(
+    "📥 주차 플랜 CSV 업로드 (예: weekly_plan_virtual.csv)",
+    type=["csv"],
+    key="weekly_plan_csv"
+)
+
+def _pick_first_existing(cols, candidates):
+    for c in candidates:
+        if c in cols:
+            return c
+    return None
+
+if uploaded_plan_csv is not None:
+    try:
+        uploaded_plan_csv.seek(0)
+        try:
+            df_plan = pd.read_csv(uploaded_plan_csv, encoding="utf-8-sig")
+        except UnicodeDecodeError:
+            uploaded_plan_csv.seek(0)
+            df_plan = pd.read_csv(uploaded_plan_csv, encoding="utf-8")
+
+        # 필수 '주차' 컬럼
+        if "주차" not in df_plan.columns:
+            st.warning("이 파일에는 '주차' 컬럼이 없습니다. (예: '1주차 (10/7~10/13)')")
+        else:
+            # 컬럼 후보: 가상/원본 모두 커버
+            focus_col = _pick_first_existing(
+                df_plan.columns,
+                ["포커스(가상)", "메인 포커스", "포커스"]
+            )
+            routine_col = _pick_first_existing(
+                df_plan.columns,
+                ["배경(가상)", "배경"]
+            )
+            if focus_col is None and routine_col is None:
+                st.warning("포커스/배경 컬럼을 찾지 못했습니다. (예: '포커스(가상)', '배경(가상)' 또는 '메인 포커스', '배경')")
+            else:
+                if "weekly_plan" not in st.session_state:
+                    st.session_state.weekly_plan = {}
+
+                # 주차 라벨 → week_key 매핑 구성
+                # 1순위: 이미 계산된 weeks 라벨 매핑 사용
+                week_key_map = {}
+                if "weeks" in locals() and isinstance(weeks, dict) and len(weeks) > 0:
+                    week_key_map.update(weeks)  # label -> week_key
+
+                updated_rows = 0
+                first_week_key_seen = None
+
+                for _, row in df_plan.fillna("").iterrows():
+                    label = str(row["주차"]).strip()
+                    if not label:
+                        continue
+
+                    # week_key 결정
+                    if label in week_key_map:
+                        wk = week_key_map[label]
+                    else:
+                        # 라벨에서 "n주차" 숫자 추출 → week{n}
+                        m = re.search(r"(\d+)\s*주차", label)
+                        if m:
+                            wk = f"week{int(m.group(1))}"
+                        else:
+                            # 최후: 해시 기반 임시 키
+                            wk = "week_" + hashlib.md5(label.encode("utf-8")).hexdigest()[:8]
+
+                    # 포커스/배경 파싱
+                    focus_raw = str(row[focus_col]).strip() if focus_col else ""
+                    routine_raw = str(row[routine_col]).strip() if routine_col else ""
+
+                    focus_list = _parse_pipe_or_lines(focus_raw)
+                    routine_list = _parse_pipe_or_lines(routine_raw)
+
+                    # 제한치(메인 2개, 배경 5개) 적용
+                    focus_list = focus_list[:2]
+                    routine_list = routine_list[:5]
+
+                    st.session_state.weekly_plan[wk] = {
+                        "focus": focus_list,
+                        "routine": routine_list
+                    }
+                    updated_rows += 1
+                    if first_week_key_seen is None:
+                        first_week_key_seen = wk
+
+                # 자동 선택 주차 키 설정 (현재 주차 가능하면 그걸로, 아니면 첫 행)
+                auto_week_key = None
+                if "weeks" in locals() and isinstance(weeks, dict) and len(weeks) > 0:
+                    cur_label = find_current_week_label(weeks)
+                    if cur_label and cur_label in weeks:
+                        auto_week_key = weeks[cur_label]
+                if auto_week_key is None:
+                    auto_week_key = first_week_key_seen
+
+                if auto_week_key:
+                    st.session_state["selected_week_key_auto"] = auto_week_key
+
+                st.success(f"✅ 주차 플랜 적용 완료! ({updated_rows}개 주차 갱신)")
+                st.caption(f"활성 주차 키: {st.session_state.get('selected_week_key_auto', '-')}")
+    except Exception as e:
+        st.error(f"주차 플랜 CSV 처리 오류: {e}")
+
+
 
 # 1. 엑셀 업로드
 uploaded_file = st.file_uploader("📁 엑셀 파일 업로드", type=["xlsx"])
@@ -302,10 +447,6 @@ if uploaded_file:
     df = pd.read_excel(uploaded_file, sheet_name="최대선_최소선")
     df = df[["프로젝트", "월", "최소선", "최대선", "측정지표"]].dropna(subset=["월"])
     
-    # Streamlit 설정
-    st.set_page_config(page_title="월별 포커스 & 주간 설정", layout="wide")
-    st.title("🧠 월별 포커스 선택 및 주간 메인/배경 구성")
-
     selected_month = st.selectbox("📅 월을 선택하세요", sorted(df["월"].dropna().unique()))
 
     year = datetime.date.today().year
@@ -539,79 +680,79 @@ if uploaded_file:
             st.caption("실행된 가상 조치가 없습니다.")
 
 #--------테스트    
-    current_week_label = find_current_week_label(weeks)
+current_week_label = find_current_week_label(weeks)
 
-    if current_week_label:
-        st.markdown(f"### 📅 이번 주: **{current_week_label}**")
-        plan = st.session_state.weekly_plan.get(weeks[current_week_label], {})
-    else:
-        st.warning("오늘 날짜에 해당하는 주차를 찾을 수 없습니다.")
-        plan = {"focus": [], "routine": []}
-    # ---
+if current_week_label:
+    st.markdown(f"### 📅 이번 주: **{current_week_label}**")
+    plan = st.session_state.weekly_plan.get(weeks[current_week_label], {})
+else:
+    st.warning("오늘 날짜에 해당하는 주차를 찾을 수 없습니다.")
+    plan = {"focus": [], "routine": []}
+# ---
 
-    DAYS_KR = ["월", "화", "수", "목", "금", "토", "일"]
-    
-    # --- (전제) 주차 선택: 해당 주만 보이도록 ---
-    # weeks = {"1주차 (10/7~10/13)": "week1", ...} 가 이미 있다고 가정
-    # 교체 후
-    options = list(weeks.keys())
-    default_index = options.index(current_week_label) if current_week_label in options else 0
-    selected_week_label = st.selectbox("📆 체크할 주 차를 선택하세요", options, index=default_index)
-    selected_week_key = weeks[selected_week_label]
-    
-    # CSV 업로드가 있으면 그 주 키를 최우선으로 사용
-    selected_week_key = st.session_state.get("selected_week_key_auto", selected_week_key)
+DAYS_KR = ["월", "화", "수", "목", "금", "토", "일"]
 
-    
-    # 주차 라벨에서 날짜 범위 파싱 (옵션)
-    def parse_week_dates(week_label: str, year: int = None):
-        if year is None:
-            year = datetime.date.today().year
-        rng = week_label.split("(")[1].strip(")")
-        start_str, end_str = rng.split("~")
-        sm, sd = map(int, start_str.split("/"))
-        em, ed = map(int, end_str.split("/"))
-        start = datetime.date(year, sm, sd)
-        end = datetime.date(year, em, ed)
-        days = [start + datetime.timedelta(days=i) for i in range((end - start).days + 1)]
-        # 길이가 7이 아닐 수 있어도 표시 맞춤
-        while len(days) < 7:
-            days.append(days[-1] + datetime.timedelta(days=1))
-        return days[:7]
-    
-    week_dates = parse_week_dates(selected_week_label)
-    
-    st.markdown(f"### 🗓 {selected_week_label} — 월-일 가로 블록 + 상세 플랜")
-    
-    # --- 이 주의 메인/배경 가져오기 ---
-    # 교체 후
-    plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
-    mains = plan.get("focus", [])[:2]
-    routines = plan.get("routine", [])
-    
-    # weekly_plan이 비어있으면 CSV(day_detail)에서 자동 추출
-    DAYS_KR = ["월","화","수","목","금","토","일"]
-    week_detail = st.session_state.day_detail.get(selected_week_key, {})
-    
-    if not mains:
-        main_candidates = []
-        for d in DAYS_KR:
-            main_candidates += week_detail.get(d, {}).get("main", [])
-        seen = set()
-        mains = [x for x in main_candidates if not (x in seen or seen.add(x))][:2]
-    
-    if not routines:
-        routine_candidates = []
-        for d in DAYS_KR:
-            routine_candidates += week_detail.get(d, {}).get("routine", [])
-        seen = set()
-        routines = [x for x in routine_candidates if not (x in seen or seen.add(x))][:5]
-    
-    if not mains and not routines:
-        st.info("이 주의 메인/배경이 비어 있습니다. CSV의 요일별 상세 플랜으로만 표시합니다.")
-    
-    main_a = mains[0] if len(mains) >= 1 else None
-    main_b = mains[1] if len(mains) >= 2 else None
+# --- (전제) 주차 선택: 해당 주만 보이도록 ---
+# weeks = {"1주차 (10/7~10/13)": "week1", ...} 가 이미 있다고 가정
+# 교체 후
+options = list(weeks.keys())
+default_index = options.index(current_week_label) if current_week_label in options else 0
+selected_week_label = st.selectbox("📆 체크할 주 차를 선택하세요", options, index=default_index)
+selected_week_key = weeks[selected_week_label]
+
+# CSV 업로드가 있으면 그 주 키를 최우선으로 사용
+selected_week_key = st.session_state.get("selected_week_key_auto", selected_week_key)
+
+
+# 주차 라벨에서 날짜 범위 파싱 (옵션)
+def parse_week_dates(week_label: str, year: int = None):
+    if year is None:
+        year = datetime.date.today().year
+    rng = week_label.split("(")[1].strip(")")
+    start_str, end_str = rng.split("~")
+    sm, sd = map(int, start_str.split("/"))
+    em, ed = map(int, end_str.split("/"))
+    start = datetime.date(year, sm, sd)
+    end = datetime.date(year, em, ed)
+    days = [start + datetime.timedelta(days=i) for i in range((end - start).days + 1)]
+    # 길이가 7이 아닐 수 있어도 표시 맞춤
+    while len(days) < 7:
+        days.append(days[-1] + datetime.timedelta(days=1))
+    return days[:7]
+
+week_dates = parse_week_dates(selected_week_label)
+
+st.markdown(f"### 🗓 {selected_week_label} — 월-일 가로 블록 + 상세 플랜")
+
+# --- 이 주의 메인/배경 가져오기 ---
+# 교체 후
+plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
+mains = plan.get("focus", [])[:2]
+routines = plan.get("routine", [])
+
+# weekly_plan이 비어있으면 CSV(day_detail)에서 자동 추출
+DAYS_KR = ["월","화","수","목","금","토","일"]
+week_detail = st.session_state.day_detail.get(selected_week_key, {})
+
+if not mains:
+    main_candidates = []
+    for d in DAYS_KR:
+        main_candidates += week_detail.get(d, {}).get("main", [])
+    seen = set()
+    mains = [x for x in main_candidates if not (x in seen or seen.add(x))][:2]
+
+if not routines:
+    routine_candidates = []
+    for d in DAYS_KR:
+        routine_candidates += week_detail.get(d, {}).get("routine", [])
+    seen = set()
+    routines = [x for x in routine_candidates if not (x in seen or seen.add(x))][:5]
+
+if not mains and not routines:
+    st.info("이 주의 메인/배경이 비어 있습니다. CSV의 요일별 상세 플랜으로만 표시합니다.")
+
+main_a = mains[0] if len(mains) >= 1 else None
+main_b = mains[1] if len(mains) >= 2 else None
 
     
     # --- 자동 배치 로직 ---
@@ -867,10 +1008,19 @@ if uploaded_file:
         (locals().get("selected_week_key") if "selected_week_key" in locals() else None) or
         "week_manual"
     )
+
+    # 체크리스트 블록 시작 직후, selected_week_key 계산한 다음에:
+    if "default_blocks" not in locals() or not isinstance(default_blocks, dict) or len(default_blocks)==0:
+    # weekly_plan에서 자동 제안 생성 (업로드만 한 경우에도 동작)
+        if "weekly_plan" in st.session_state and selected_week_key in st.session_state.weekly_plan:
+            default_blocks = _build_default_blocks_from_weekplan(selected_week_key)
+        else:
+            default_blocks = {d: [] for d in ["월","화","수","목","금","토","일"]}
+
     
     # 해당 주차 구조 보장
     if selected_week_key not in st.session_state.day_detail:
-        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYSㄴ_KR}
     
     # 오늘 요일 자동 + 수동 선택 가능
     today = datetime.date.today()

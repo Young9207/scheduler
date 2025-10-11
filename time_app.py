@@ -882,185 +882,185 @@ if uploaded_file:
 
     # # ---
 
-    st.markdown("---")
-    st.markdown("### ✅ 오늘의 실행 체크리스트")
+#     st.markdown("---")
+#     st.markdown("### ✅ 오늘의 실행 체크리스트")
 
-    # --- CSV로 상세 플랜 불러오기/덮어쓰기 옵션 ---
-    st.markdown("#### 📎 CSV에서 상세 플랜 불러오기")
-    with st.expander("CSV 적용 옵션 열기", expanded=False):
-        apply_mode = st.radio(
-            "적용 방식",
-            ["비어있지 않은 값만 덮어쓰기", "완전 덮어쓰기(해당 요일 메인/배경 전부 교체)"],
-            index=0,
-            horizontal=True,
-        )
-        uploaded_csv = st.file_uploader("이 주 계획 CSV 업로드 (이전에 다운로드한 포맷 권장, utf-8-sig)", type=["csv"])
+#     # --- CSV로 상세 플랜 불러오기/덮어쓰기 옵션 ---
+#     st.markdown("#### 📎 CSV에서 상세 플랜 불러오기")
+#     with st.expander("CSV 적용 옵션 열기", expanded=False):
+#         apply_mode = st.radio(
+#             "적용 방식",
+#             ["비어있지 않은 값만 덮어쓰기", "완전 덮어쓰기(해당 요일 메인/배경 전부 교체)"],
+#             index=0,
+#             horizontal=True,
+#         )
+#         uploaded_csv = st.file_uploader("이 주 계획 CSV 업로드 (이전에 다운로드한 포맷 권장, utf-8-sig)", type=["csv"])
 
-        def _parse_pipe_or_lines(s: str):
-            if not s:
-                return []
-            s = str(s)
-            # 다운로드 포맷: "a | b | c" 형태 → 우선 '|' 기준, 대안으로 줄바꿈/콤마도 허용
-            if "|" in s:
-                parts = [x.strip() for x in s.split("|")]
-            else:
-                parts = []
-                for sep in ["\n", ","]:
-                    if sep in s:
-                        parts = [x.strip() for x in s.split(sep)]
-                        break
-                if not parts:  # 구분자 없음 → 단일 항목
-                    parts = [s.strip()]
-            return [x for x in parts if x]
+#         def _parse_pipe_or_lines(s: str):
+#             if not s:
+#                 return []
+#             s = str(s)
+#             # 다운로드 포맷: "a | b | c" 형태 → 우선 '|' 기준, 대안으로 줄바꿈/콤마도 허용
+#             if "|" in s:
+#                 parts = [x.strip() for x in s.split("|")]
+#             else:
+#                 parts = []
+#                 for sep in ["\n", ","]:
+#                     if sep in s:
+#                         parts = [x.strip() for x in s.split(sep)]
+#                         break
+#                 if not parts:  # 구분자 없음 → 단일 항목
+#                     parts = [s.strip()]
+#             return [x for x in parts if x]
 
-        if uploaded_csv is not None and st.button("🪄 CSV 적용"):
-            try:
-                import pandas as pd
-                uploaded_csv.seek(0)
-                try:
-                    df = pd.read_csv(uploaded_csv, encoding="utf-8-sig")
-                except UnicodeDecodeError:
-                    uploaded_csv.seek(0)
-                    df = pd.read_csv(uploaded_csv, encoding="utf-8")
+#         if uploaded_csv is not None and st.button("🪄 CSV 적용"):
+#             try:
+#                 import pandas as pd
+#                 uploaded_csv.seek(0)
+#                 try:
+#                     df = pd.read_csv(uploaded_csv, encoding="utf-8-sig")
+#                 except UnicodeDecodeError:
+#                     uploaded_csv.seek(0)
+#                     df = pd.read_csv(uploaded_csv, encoding="utf-8")
 
-                # 필요한 컬럼 확인 (우리는 '요일', '상세 플랜(메인)', '상세 플랜(배경)'만 사용)
-                if "요일" not in df.columns:
-                    st.warning("CSV에 '요일' 컬럼이 없습니다. 기존 다운로드한 포맷을 사용해 주세요.")
-                else:
-                    df = df.fillna("")
-                    df["요일"] = df["요일"].astype(str).str.strip()
+#                 # 필요한 컬럼 확인 (우리는 '요일', '상세 플랜(메인)', '상세 플랜(배경)'만 사용)
+#                 if "요일" not in df.columns:
+#                     st.warning("CSV에 '요일' 컬럼이 없습니다. 기존 다운로드한 포맷을 사용해 주세요.")
+#                 else:
+#                     df = df.fillna("")
+#                     df["요일"] = df["요일"].astype(str).str.strip()
 
-                    # 요일 → (main, routine) 매핑 생성
-                    csv_map = {}
-                    for _, row in df.iterrows():
-                        day = str(row.get("요일", "")).strip()
-                        if not day:
-                            continue
-                        main_raw = row.get("상세 플랜(메인)", "")
-                        routine_raw = row.get("상세 플랜(배경)", "")
-                        csv_map[day] = {
-                            "main": _parse_pipe_or_lines(main_raw),
-                            "routine": _parse_pipe_or_lines(routine_raw),
-                        }
+#                     # 요일 → (main, routine) 매핑 생성
+#                     csv_map = {}
+#                     for _, row in df.iterrows():
+#                         day = str(row.get("요일", "")).strip()
+#                         if not day:
+#                             continue
+#                         main_raw = row.get("상세 플랜(메인)", "")
+#                         routine_raw = row.get("상세 플랜(배경)", "")
+#                         csv_map[day] = {
+#                             "main": _parse_pipe_or_lines(main_raw),
+#                             "routine": _parse_pipe_or_lines(routine_raw),
+#                         }
 
-                    # 세션 상태에 반영
-                    updated_count = 0
-                    for d in DAYS_KR:
-                        if d not in csv_map:
-                            continue
-                        new_main = csv_map[d]["main"]
-                        new_routine = csv_map[d]["routine"]
+#                     # 세션 상태에 반영
+#                     updated_count = 0
+#                     for d in DAYS_KR:
+#                         if d not in csv_map:
+#                             continue
+#                         new_main = csv_map[d]["main"]
+#                         new_routine = csv_map[d]["routine"]
 
-                        if apply_mode.startswith("완전 덮어쓰기"):
-                            st.session_state.day_detail[selected_week_key][d]["main"] = new_main
-                            st.session_state.day_detail[selected_week_key][d]["routine"] = new_routine
-                            updated_count += 1
-                        else:
-                            # 비어있지 않은 값만 덮어쓰기
-                            if new_main:
-                                st.session_state.day_detail[selected_week_key][d]["main"] = new_main
-                            if new_routine:
-                                st.session_state.day_detail[selected_week_key][d]["routine"] = new_routine
-                            if new_main or new_routine:
-                                updated_count += 1
+#                         if apply_mode.startswith("완전 덮어쓰기"):
+#                             st.session_state.day_detail[selected_week_key][d]["main"] = new_main
+#                             st.session_state.day_detail[selected_week_key][d]["routine"] = new_routine
+#                             updated_count += 1
+#                         else:
+#                             # 비어있지 않은 값만 덮어쓰기
+#                             if new_main:
+#                                 st.session_state.day_detail[selected_week_key][d]["main"] = new_main
+#                             if new_routine:
+#                                 st.session_state.day_detail[selected_week_key][d]["routine"] = new_routine
+#                             if new_main or new_routine:
+#                                 updated_count += 1
 
-                    st.success(f"CSV 적용 완료! {updated_count}개 요일의 상세 플랜이 갱신되었습니다.")
-            except Exception as e:
-                st.error(f"CSV 처리 중 오류가 발생했습니다: {e}")
+#                     st.success(f"CSV 적용 완료! {updated_count}개 요일의 상세 플랜이 갱신되었습니다.")
+#             except Exception as e:
+#                 st.error(f"CSV 처리 중 오류가 발생했습니다: {e}")
 
 
-    # 1) 오늘 날짜/요일 자동 인식 + 필요시 수동 변경
-    today = datetime.date.today()
-    today_idx_auto = today.weekday()  # 0=월 ... 6=일
-    days_map = {0:"월",1:"화",2:"수",3:"목",4:"금",5:"토",6:"일"}
-    auto_day_label = days_map[today_idx_auto]
-    st.caption(f"자동 감지된 오늘 요일: {auto_day_label}")
+#     # 1) 오늘 날짜/요일 자동 인식 + 필요시 수동 변경
+#     today = datetime.date.today()
+#     today_idx_auto = today.weekday()  # 0=월 ... 6=일
+#     days_map = {0:"월",1:"화",2:"수",3:"목",4:"금",5:"토",6:"일"}
+#     auto_day_label = days_map[today_idx_auto]
+#     st.caption(f"자동 감지된 오늘 요일: {auto_day_label}")
 
-    day_options = DAYS_KR  # ["월","화","수","목","금","토","일"]
-    sel_day = st.selectbox("🗓 오늘 요일을 선택/확인하세요", day_options, index=today_idx_auto if today_idx_auto < len(day_options) else 0)
+#     day_options = DAYS_KR  # ["월","화","수","목","금","토","일"]
+#     sel_day = st.selectbox("🗓 오늘 요일을 선택/확인하세요", day_options, index=today_idx_auto if today_idx_auto < len(day_options) else 0)
 
-    # 2) 오늘에 해당하는 상세 플랜(메인/배경) 불러오기 (없으면 자동 제안으로 대체)
-    detail_main = st.session_state.day_detail[selected_week_key][sel_day]["main"]
-    detail_routine = st.session_state.day_detail[selected_week_key][sel_day]["routine"]
+#     # 2) 오늘에 해당하는 상세 플랜(메인/배경) 불러오기 (없으면 자동 제안으로 대체)
+#     detail_main = st.session_state.day_detail[selected_week_key][sel_day]["main"]
+#     detail_routine = st.session_state.day_detail[selected_week_key][sel_day]["routine"]
 
-    auto_items = default_blocks.get(sel_day, []) if isinstance(default_blocks, dict) else []
-    auto_main = [x for x in auto_items if not x.startswith("배경:")]
-    auto_routine = [x for x in auto_items if x.startswith("배경:")]
+#     auto_items = default_blocks.get(sel_day, []) if isinstance(default_blocks, dict) else []
+#     auto_main = [x for x in auto_items if not x.startswith("배경:")]
+#     auto_routine = [x for x in auto_items if x.startswith("배경:")]
 
-    final_main = detail_main if detail_main else auto_main
-    final_routine = detail_routine if detail_routine else auto_routine
+#     final_main = detail_main if detail_main else auto_main
+#     final_routine = detail_routine if detail_routine else auto_routine
 
-    # 3) 태스크 목록 만들기 (메인/배경에 라벨 붙이기)
-    today_tasks = []
-    today_tasks += [("[메인]", t) for t in final_main]
-    today_tasks += [("[배경]", t.replace("배경:", "").strip()) for t in final_routine]
+#     # 3) 태스크 목록 만들기 (메인/배경에 라벨 붙이기)
+#     today_tasks = []
+#     today_tasks += [("[메인]", t) for t in final_main]
+#     today_tasks += [("[배경]", t.replace("배경:", "").strip()) for t in final_routine]
 
-    # 4) 체크 상태 저장소 준비 (날짜+주차 기준으로 저장)
-    if "completed_by_day" not in st.session_state:
-        st.session_state.completed_by_day = {}  # dict[(week_key, date_str)] = set(labels)
+#     # 4) 체크 상태 저장소 준비 (날짜+주차 기준으로 저장)
+#     if "completed_by_day" not in st.session_state:
+#         st.session_state.completed_by_day = {}  # dict[(week_key, date_str)] = set(labels)
 
-    # 주차의 특정 날짜 문자열 (선택 주의 해당 요일 날짜가 있으면 그걸 사용)
-    if week_dates:
-        # 선택 주의 day index를 구함
-        day_idx = DAYS_KR.index(sel_day)
-        date_str = f"{week_dates[day_idx].isoformat()}"
-    else:
-        date_str = today.isoformat()  # fallback
+#     # 주차의 특정 날짜 문자열 (선택 주의 해당 요일 날짜가 있으면 그걸 사용)
+#     if week_dates:
+#         # 선택 주의 day index를 구함
+#         day_idx = DAYS_KR.index(sel_day)
+#         date_str = f"{week_dates[day_idx].isoformat()}"
+#     else:
+#         date_str = today.isoformat()  # fallback
 
-    store_key = (selected_week_key, date_str)
-    if store_key not in st.session_state.completed_by_day:
-        st.session_state.completed_by_day[store_key] = set()
+#     store_key = (selected_week_key, date_str)
+#     if store_key not in st.session_state.completed_by_day:
+#         st.session_state.completed_by_day[store_key] = set()
 
-    # 5) 체크박스 렌더 + 진행률
-    completed = st.session_state.completed_by_day[store_key]
+#     # 5) 체크박스 렌더 + 진행률
+#     completed = st.session_state.completed_by_day[store_key]
 
-    def task_key(prefix, text):
-        raw = f"{selected_week_key}|{date_str}|{prefix}|{text}"
-        return "chk_" + hashlib.md5(raw.encode("utf-8")).hexdigest()
+#     def task_key(prefix, text):
+#         raw = f"{selected_week_key}|{date_str}|{prefix}|{text}"
+#         return "chk_" + hashlib.md5(raw.encode("utf-8")).hexdigest()
 
-    if not today_tasks:
-        st.info("오늘 체크할 항목이 없습니다. (해당 요일의 상세 플랜을 적거나, 주차 자동 제안을 확인해주세요.)")
-    else:
-        for kind, text in today_tasks:
-            label = f"{kind} {text}"
-            key = task_key(kind, text)
-            default_checked = label in completed
-            checked = st.checkbox(label, value=default_checked, key=key)
-            if checked:
-                completed.add(label)
-            else:
-                completed.discard(label)
+#     if not today_tasks:
+#         st.info("오늘 체크할 항목이 없습니다. (해당 요일의 상세 플랜을 적거나, 주차 자동 제안을 확인해주세요.)")
+#     else:
+#         for kind, text in today_tasks:
+#             label = f"{kind} {text}"
+#             key = task_key(kind, text)
+#             default_checked = label in completed
+#             checked = st.checkbox(label, value=default_checked, key=key)
+#             if checked:
+#                 completed.add(label)
+#             else:
+#                 completed.discard(label)
 
-        percent = int(len(completed) / len(today_tasks) * 100)
-        st.progress(percent)
-        st.write(f"📊 오늘의 달성률: **{percent}%** ({len(completed)} / {len(today_tasks)})")
+#         percent = int(len(completed) / len(today_tasks) * 100)
+#         st.progress(percent)
+#         st.write(f"📊 오늘의 달성률: **{percent}%** ({len(completed)} / {len(today_tasks)})")
 
-    # 6) (선택) 오늘 체크 내역 표/다운로드
-    with st.expander("📋 오늘 체크 내역 보기/내보내기"):
-        rows = [{"날짜": date_str, "유형": kind, "할 일": text, "완료": (f"{kind} {text}" in completed)} for kind, text in today_tasks]
-        df_today = pd.DataFrame(rows)
-        st.dataframe(df_today, use_container_width=True)
-        csv_today = df_today.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("📥 오늘 체크 내역 CSV 다운로드", data=csv_today, file_name=f"today_tasks_{date_str}.csv", mime="text/csv")
+#     # 6) (선택) 오늘 체크 내역 표/다운로드
+#     with st.expander("📋 오늘 체크 내역 보기/내보내기"):
+#         rows = [{"날짜": date_str, "유형": kind, "할 일": text, "완료": (f"{kind} {text}" in completed)} for kind, text in today_tasks]
+#         df_today = pd.DataFrame(rows)
+#         st.dataframe(df_today, use_container_width=True)
+#         csv_today = df_today.to_csv(index=False).encode("utf-8-sig")
+#         st.download_button("📥 오늘 체크 내역 CSV 다운로드", data=csv_today, file_name=f"today_tasks_{date_str}.csv", mime="text/csv")
 
-    # --- 주간 회고 ---
-    st.markdown("### 📝 이번 주 회고 메모")
-    if "weekly_review" not in st.session_state:
-        st.session_state.weekly_review = {}
+#     # --- 주간 회고 ---
+#     st.markdown("### 📝 이번 주 회고 메모")
+#     if "weekly_review" not in st.session_state:
+#         st.session_state.weekly_review = {}
 
-    current_review = st.session_state.weekly_review.get(selected_week_key, "")
-    review_text = st.text_area(
-        "이번 주를 돌아보며 남기고 싶은 메모",
-        value=current_review,
-        key=f"review::{selected_week_key}",
-        height=140,
-        placeholder="이번 주 무엇을 배웠는지, 다음 주에 개선할 1가지만 적어도 좋아요."
-    )
+#     current_review = st.session_state.weekly_review.get(selected_week_key, "")
+#     review_text = st.text_area(
+#         "이번 주를 돌아보며 남기고 싶은 메모",
+#         value=current_review,
+#         key=f"review::{selected_week_key}",
+#         height=140,
+#         placeholder="이번 주 무엇을 배웠는지, 다음 주에 개선할 1가지만 적어도 좋아요."
+#     )
 
-    st.session_state.weekly_review[selected_week_key] = review_text
+#     st.session_state.weekly_review[selected_week_key] = review_text
 
-if "state_loaded_once" not in st.session_state:
-    load_state()
-    st.session_state["state_loaded_once"] = True
+# if "state_loaded_once" not in st.session_state:
+#     load_state()
+#     st.session_state["state_loaded_once"] = True
 # 페이지 맨 끝 (모든 UI 렌더 후)
 save_state()

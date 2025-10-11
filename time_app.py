@@ -690,7 +690,21 @@ if "day_detail" not in st.session_state:
     st.session_state.day_detail = {}
 if "default_blocks" not in st.session_state:
     st.session_state.default_blocks = {}
-    
+
+# --- 현재 활성 주차 키 결정 (CSV 업로드, 자동 탐색, 수동 선택 중 우선순위 적용) ---
+selected_week_key = (
+    st.session_state.get("selected_week_key_auto")   # CSV 업로드 시 자동 주차 키
+    or locals().get("current_week_key")              # 오늘 날짜 기준 주차
+    or "week_manual"
+)
+
+if "day_detail" not in st.session_state:
+    st.session_state.day_detail = {}
+if selected_week_key not in st.session_state.day_detail:
+    st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in ["월","화","수","목","금","토","일"]}
+
+
+
 # --- 현재 주차 결정 ---
 current_week_label = find_current_week_label(weeks)
 if current_week_label is None and weeks:

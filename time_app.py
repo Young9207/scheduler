@@ -763,17 +763,10 @@ if "day_detail" not in st.session_state:
 if selected_week_key not in st.session_state.day_detail:
     st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
 
-def _join_for_cell(items: list[str]) -> str:
-    """표에 보여줄 기본 문자열: ' | '로 조인"""
+def _join_for_cell(items):
     return " | ".join(items) if items else ""
 
-def _safe_parse_cell(val):
-    """표에서 받은 셀 값을 리스트로 안전 변환 (NaN/빈칸 처리)"""
-    if val is None or (isinstance(val, float) and pd.isna(val)):
-        return []
-    return _parse_pipe_or_lines(str(val))
-
-# 1) 현재 상태 → 표 데이터 구성 (자동제안 사용 X)
+# 표 기본 데이터 구성
 table_rows = []
 for i, d in enumerate(DAYS_KR):
     date_str = f"{week_dates[i].month}/{week_dates[i].day}" if i < len(week_dates) else ""
@@ -788,39 +781,24 @@ for i, d in enumerate(DAYS_KR):
 
 df_edit = pd.DataFrame(table_rows)
 
-# 2) 표 에디터 렌더 (요일/날짜는 읽기전용, 7행 고정)
+# ✏️ 간단한 표 에디터
 edited = st.data_editor(
     df_edit,
-    column_config={
-        "요일": st.column_config.TextColumn(disabled=True),
-        "날짜": st.column_config.TextColumn(disabled=True),
-        "상세 플랜(메인)": st.column_config.TextAreaColumn(
-            help="여러 항목은 | 또는 줄바꿈/콤마로 구분",
-            max_chars=2000,
-            height=90,
-        ),
-        "상세 플랜(배경)": st.column_config.TextAreaColumn(
-            help="여러 항목은 | 또는 줄바꿈/콤마로 구분",
-            max_chars=2000,
-            height=90,
-        ),
-    },
     hide_index=True,
     use_container_width=True,
-    num_rows="fixed",  # 월~일 7행 고정
     key=f"editor::{selected_week_key}",
 )
 
-# 3) 표에서 수정한 값 → 세션 상태 반영
-for _, row in edited.fillna("").iterrows():
+# 수정 내용 즉시 반영
+for _, row in edited.iterrows():
     day = row["요일"]
-    st.session_state.day_detail[selected_week_key][day]["main"] = _safe_parse_cell(row["상세 플랜(메인)"])
-    st.session_state.day_detail[selected_week_key][day]["routine"] = _safe_parse_cell(row["상세 플랜(배경)"])
+    st.session_state.day_detail[selected_week_key][day]["main"] = _parse_pipe_or_lines(row["상세 플랜(메인)"])
+    st.session_state.day_detail[selected_week_key][day]["routine"] = _parse_pipe_or_lines(row["상세 플랜(배경)"])
 
-# 4) (선택) 현재 표 그대로 CSV 내보내기
+# CSV 다운로드 버튼
 csv_week = edited.to_csv(index=False).encode("utf-8-sig")
 st.download_button(
-    "📥 이 주 상세 플랜 CSV 다운로드(표 그대로)",
+    "📥 이 주 상세 플랜 CSV 다운로드",
     data=csv_week,
     file_name=f"week_detail_table_{selected_week_key}.csv",
     mime="text/csv",

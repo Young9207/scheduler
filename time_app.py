@@ -635,14 +635,21 @@ if uploaded_file:
     
     # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
     # --- 상세 플랜 저장 구조 초기화 ---
+    # --- 상세 플랜 저장 구조: { week_key: { day: {"main":[], "routine":[]} } } ---
+# --- 상세 플랜 저장 구조 초기화 ---
     if "day_detail" not in st.session_state:
         st.session_state.day_detail = {}
-
-    # --- [신규 기능] 기존 week_plan CSV 자동 반영 ---
-    uploaded_week_csv = st.file_uploader("📥 기존 주간 계획표 업로드 (예: week_plan_week2-2.csv)", type=["csv"], key="weekly_restore")
     
-    if uploaded_week_csv is not None and st.button("✅ 주간 계획표 불러와 상세 플랜 복원"):
-        import pandas as pd
+    DAYS_KR = ["월","화","수","목","금","토","일"]  # ← 안전 가드(외부에서 못 받았을 때 대비)
+    
+    # --- [수정] 기존 week_plan CSV 업로드: 버튼 없이 업로드 즉시 적용 ---
+    uploaded_week_csv = st.file_uploader(
+        "📥 기존 주간 계획표 업로드 (예: week_plan_week2-2.csv)",
+        type=["csv"],
+        key="weekly_restore"
+    )
+    
+    if uploaded_week_csv is not None:
         try:
             uploaded_week_csv.seek(0)
             try:
@@ -652,33 +659,42 @@ if uploaded_file:
                 df = pd.read_csv(uploaded_week_csv, encoding="utf-8")
     
             # 필수 컬럼 확인
-            if not set(["요일", "상세 플랜(메인)", "상세 플랜(배경)"]).issubset(df.columns):
+            required_cols = {"요일", "상세 플랜(메인)", "상세 플랜(배경)"}
+            if not required_cols.issubset(df.columns):
                 st.warning("CSV에 필요한 컬럼(요일, 상세 플랜(메인), 상세 플랜(배경))이 없습니다.")
             else:
-                match = re.search(r"week\d+", uploaded_week_csv.name)
+                # 파일명에서 week_key 추출
+                match = re.search(r"week\d+", uploaded_week_csv.name or "")
                 week_key = match.group(0) if match else "week_manual"
-
-                # week_key = Path(uploaded_week_csv.name).stem.split("_")[-1]  # 예: week_plan_week2-2.csv → 'week2-2'
+    
+                # 세션 구조 보장
                 if week_key not in st.session_state.day_detail:
                     st.session_state.day_detail[week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+    
+                # 결측/공백 정리
                 df = df.fillna("")
                 df["요일"] = df["요일"].astype(str).str.strip()
     
+                # CSV → 세션 반영
+                updated = 0
                 for _, row in df.iterrows():
                     day = str(row["요일"]).strip()
-                    if not day or day not in DAYS_KR:
-                        continue
-                    main_items = _parse_pipe_or_lines(row["상세 플랜(메인)"])
-                    routine_items = _parse_pipe_or_lines(row["상세 플랜(배경)"])
-                    st.session_state.day_detail[week_key][day]["main"] = main_items
-                    st.session_state.day_detail[week_key][day]["routine"] = routine_items
+                    if day and day in DAYS_KR:
+                        st.session_state.day_detail[week_key][day]["main"] = _parse_pipe_or_lines(row["상세 플랜(메인)"])
+                        st.session_state.day_detail[week_key][day]["routine"] = _parse_pipe_or_lines(row["상세 플랜(배경)"])
+                        updated += 1
     
-                st.success(f"✅ {week_key} 주간 계획표를 성공적으로 불러왔습니다!")
+                # 주차 키/파일명 세션 저장 (아래 섹션에서 자동 선택되도록)
+                st.session_state["selected_week_key_auto"] = week_key
+                st.session_state["last_uploaded_week_csv"] = uploaded_week_csv.name
+    
+                st.success(f"✅ {week_key} 주간 계획표 적용 완료! ({updated}개 요일 갱신)")
+    
         except Exception as e:
             st.error(f"CSV 처리 오류: {e}")
-
     
-    # --- ✅ 주차 선택 여부와 관계없이 CSV 업로드 가능 ---
+    
+    # --- ✅ 주차 선택 여부와 관계없이 CSV 추가 업로드/덮어쓰기 가능 ---
     st.markdown("### 📎 CSV로 상세 플랜 불러오기 (주차 선택 전에도 가능)")
     with st.expander("CSV 업로드 옵션 열기", expanded=False):
         apply_mode = st.radio(
@@ -695,9 +711,7 @@ if uploaded_file:
             key="csv_upload_global"
         )
     
-    
         if uploaded_csv is not None and st.button("🪄 CSV 불러오기 적용", key="apply_csv_global"):
-            import pandas as pd
             try:
                 uploaded_csv.seek(0)
                 try:
@@ -711,6 +725,8 @@ if uploaded_file:
                 else:
                     df = df.fillna("")
                     df["요일"] = df["요일"].astype(str).str.strip()
+    
+                    # 요일 → 값 매핑
                     csv_map = {}
                     for _, row in df.iterrows():
                         day = str(row.get("요일", "")).strip()
@@ -723,8 +739,12 @@ if uploaded_file:
                             "routine": _parse_pipe_or_lines(routine_raw),
                         }
     
-                    # 주차 키가 선택되어 있지 않아도 임시로 global_week 키로 저장
-                    active_week = selected_week_key if 'selected_week_key' in locals() and selected_week_key else "global_week"
+                    # 현재 선택 주차키: 업로드 주차키가 있으면 그걸 우선 사용
+                    active_week = (
+                        st.session_state.get("selected_week_key_auto")
+                        or (locals().get("selected_week_key") if "selected_week_key" in locals() else None)
+                        or "global_week"
+                    )
                     if active_week not in st.session_state.day_detail:
                         st.session_state.day_detail[active_week] = {d: {"main": [], "routine": []} for d in DAYS_KR}
     
@@ -747,9 +767,11 @@ if uploaded_file:
                             if new_main or new_routine:
                                 updated_count += 1
     
-                    st.success(f"✅ CSV 적용 완료 — {updated_count}개 요일의 상세 플랜이 갱신되었습니다.")
+                    st.success(f"✅ CSV 적용 완료 — {updated_count}개 요일의 상세 플랜이 갱신되었습니다. (주차: {active_week})")
+    
             except Exception as e:
                 st.error(f"CSV 처리 중 오류: {e}")
+
 
 
     st.markdown("### ✅ 이 주 요약표 (당신이 적은 상세 플랜 기준)")

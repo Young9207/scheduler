@@ -445,6 +445,28 @@ if uploaded_plan_csv is not None:
 
                 st.success(f"✅ 주차 플랜 적용 완료! ({updated_rows}개 주차 갱신)")
                 st.caption(f"활성 주차 키: {st.session_state.get('selected_week_key_auto', '-')}")
+
+                # ✅ 주차 플랜을 요일별 상세(day_detail)로 자동 확장
+                if "weekly_plan" in st.session_state and st.session_state.weekly_plan:
+                    DAYS_KR = ["월","화","수","목","금","토","일"]
+                    for week_key, plan in st.session_state.weekly_plan.items():
+                        if week_key not in st.session_state.day_detail:
+                            st.session_state.day_detail[week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
+                        mains = plan.get("focus", [])[:2]
+                        routines = plan.get("routine", [])
+                        default_blocks = _build_default_blocks_from_weekplan(week_key)
+                        for d in DAYS_KR:
+                            # 메인/루틴 비어 있으면 기본 블록으로 채움
+                            auto_items = default_blocks.get(d, [])
+                            main_items = [x for x in auto_items if not x.startswith("배경:")]
+                            routine_items = [x for x in auto_items if x.startswith("배경:")]
+                            if not st.session_state.day_detail[week_key][d]["main"]:
+                                st.session_state.day_detail[week_key][d]["main"] = main_items
+                            if not st.session_state.day_detail[week_key][d]["routine"]:
+                                st.session_state.day_detail[week_key][d]["routine"] = routine_items
+                    st.success("✅ 주차 플랜을 요일별 상세 계획(day_detail)로 자동 확장했습니다!")
+                            
+    
     except Exception as e:
         st.error(f"주차 플랜 CSV 처리 오류: {e}")
 

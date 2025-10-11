@@ -808,25 +808,18 @@ st.markdown("---")
 
 tab1, tab2, tab3 = st.tabs(["📋 요약 보기", "🧩 상세 플랜 보기", "📊 진행 현황 보기"])
 
-# 1️⃣ 요약 보기
-with tab1:
-    st.markdown("### 🗂 주간 요약 (선택한 포커스 & 배경)")
-    plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
-    st.write("**메인 포커스:**", " | ".join(plan.get("focus", [])) or "-")
-    st.write("**배경 루틴:**", " | ".join(plan.get("routine", [])) or "-")
+# 1️⃣ 이번 주 메인 포커스 & 배경 루틴
+week_plan = st.session_state.weekly_plan.get(selected_week_key, {"focus": [], "routine": []})
+main_focus = " | ".join(week_plan.get("focus", [])) or "-"
+background_focus = " | ".join(week_plan.get("routine", [])) or "-"
 
-    summary_rows = []
-    for i, d in enumerate(DAYS_KR):
-        date_disp = f"{week_dates[i].month}/{week_dates[i].day}"
-        detail_main = st.session_state.day_detail[selected_week_key][d]["main"]
-        detail_routine = st.session_state.day_detail[selected_week_key][d]["routine"]
-        summary_rows.append({
-            "요일": d,
-            "날짜": date_disp,
-            "상세(메인)": " | ".join(detail_main) or "-",
-            "상세(배경)": " | ".join(detail_routine) or "-",
-        })
-    st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
+with st.container():
+    st.markdown("#### 🎯 이 주 요약표 (메인 포커스 → 요일별 상세)")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.info(f"**메인 포커스:** {main_focus}")
+    with c2:
+        st.info(f"**배경 루틴:** {background_focus}")
 
 # 2️⃣ 상세 플랜 보기
 with tab2:

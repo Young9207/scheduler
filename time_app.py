@@ -760,50 +760,50 @@ main_b = mains[1] if len(mains) >= 2 else None
 
     
     # --- 자동 배치 로직 ---
-    def auto_place_blocks(main_a: str, main_b: str | None, routines: list[str]):
-        """
-        월/수/금 → A, 화/목/금 → B, 금요일은 마무리/체크업,
-        토/일은 미완료 보완/보충. 배경은 요일별로 순환 삽입.
-        """
-        day_blocks = {d: [] for d in DAYS_KR}
-    
-        # 메인 배치
-        assign_map = {
-            "월": [("메인", main_a)],
-            "화": [("메인", main_b if main_b else main_a)],
-            "수": [("메인", main_a)],
-            "목": [("메인", main_b if main_b else main_a)],
-            "금": [("메인-마무리/체크업", main_a)]
-        }
-        if main_b:
-            assign_map["금"].append(("메인-마무리/체크업", main_b))
-    
-        # 적용
-        for d, items in assign_map.items():
-            for tag, title in items:
-                if title:
-                    # 스텝 라벨 없이 핵심만 (UI엔 스텝 숨김)
-                    day_blocks[d].append(f"{tag}: {title}")
-    
-        # 주말: 보완/보충/회고 제안
-        day_blocks["토"].append("보완/보충: 이번 주 미완료 항목 처리")
-        day_blocks["일"].append("회고/정리: 다음 주 준비")
-    
-        # 배경을 요일별로 고르게 순환 삽입
-        if routines:
-            ri = 0
-            for d in DAYS_KR:
-                # 금요일엔 '마무리'가 있으니 배경은 1개만 제안
-                if d == "금":
-                    day_blocks[d].append(f"배경: {routines[ri % len(routines)]}"); ri += 1
-                else:
-                    # 평일 1~2개, 주말 1개 정도로 제안 (필요시 조절 가능)
-                    day_blocks[d].append(f"배경: {routines[ri % len(routines)]}"); ri += 1
-    
-        return day_blocks
-    
-    # default_blocks = auto_place_blocks(main_a, main_b, routines)
-    # 교체 후
+def auto_place_blocks(main_a: str, main_b: str | None, routines: list[str]):
+    """
+    월/수/금 → A, 화/목/금 → B, 금요일은 마무리/체크업,
+    토/일은 미완료 보완/보충. 배경은 요일별로 순환 삽입.
+    """
+    day_blocks = {d: [] for d in DAYS_KR}
+
+    # 메인 배치
+    assign_map = {
+        "월": [("메인", main_a)],
+        "화": [("메인", main_b if main_b else main_a)],
+        "수": [("메인", main_a)],
+        "목": [("메인", main_b if main_b else main_a)],
+        "금": [("메인-마무리/체크업", main_a)]
+    }
+    if main_b:
+        assign_map["금"].append(("메인-마무리/체크업", main_b))
+
+    # 적용
+    for d, items in assign_map.items():
+        for tag, title in items:
+            if title:
+                # 스텝 라벨 없이 핵심만 (UI엔 스텝 숨김)
+                day_blocks[d].append(f"{tag}: {title}")
+
+    # 주말: 보완/보충/회고 제안
+    day_blocks["토"].append("보완/보충: 이번 주 미완료 항목 처리")
+    day_blocks["일"].append("회고/정리: 다음 주 준비")
+
+    # 배경을 요일별로 고르게 순환 삽입
+    if routines:
+        ri = 0
+        for d in DAYS_KR:
+            # 금요일엔 '마무리'가 있으니 배경은 1개만 제안
+            if d == "금":
+                day_blocks[d].append(f"배경: {routines[ri % len(routines)]}"); ri += 1
+            else:
+                # 평일 1~2개, 주말 1개 정도로 제안 (필요시 조절 가능)
+                day_blocks[d].append(f"배경: {routines[ri % len(routines)]}"); ri += 1
+
+    return day_blocks
+
+# default_blocks = auto_place_blocks(main_a, main_b, routines)
+# 교체 후
 if main_a:
     default_blocks = auto_place_blocks(main_a, main_b, routines)
 else:

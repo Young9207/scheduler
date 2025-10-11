@@ -984,83 +984,43 @@ else:
     # ------------------------------
     st.markdown("---")
     st.markdown("### ✅ 오늘의 실행 체크리스트")
-    
-    # 안전 가드
-    DAYS_KR = ["월","화","수","목","금","토","일"]
-    if "day_detail" not in st.session_state:
-        st.session_state.day_detail = {}
-    
-    # 어떤 주를 대상으로 할지 결정: CSV 업로드 주차 우선, 없으면 위에서 선택된 주, 마지막으로 임시키
-    selected_week_key = (
-        st.session_state.get("selected_week_key_auto") or
-        (locals().get("selected_week_key") if "selected_week_key" in locals() else None) or
-        "week_manual"
-    )
-
-    # 체크리스트 블록 시작 직후, selected_week_key 계산한 다음에:
-    # default_blocks 보장: weekly_plan이 없거나 메인/배경이 비어도 동작
-    if "default_blocks" not in locals() or not isinstance(default_blocks, dict) or len(default_blocks) == 0:
-        if "weekly_plan" in st.session_state and selected_week_key in st.session_state.weekly_plan:
-            default_blocks = _build_default_blocks_from_weekplan(selected_week_key)
-        else:
-            default_blocks = {d: [] for d in ["월","화","수","목","금","토","일"]}
-
 
     
-    # 해당 주차 구조 보장
-    if selected_week_key not in st.session_state.day_detail:
-        st.session_state.day_detail[selected_week_key] = {d: {"main": [], "routine": []} for d in DAYS_KR}
-    
-    # 오늘 요일 자동 + 수동 선택 가능
+    # 오늘 요일 선택(자동 인덱스)
     today = datetime.date.today()
     today_idx_auto = today.weekday()  # 0=월 ... 6=일
-    day_options = DAYS_KR
-    sel_day = st.selectbox(
-        "🗓 오늘 요일을 선택/확인하세요",
-        day_options,
-        index=today_idx_auto if today_idx_auto < len(day_options) else 0
-    )
+    sel_day = st.selectbox("🗓 오늘 요일을 선택/확인하세요", DAYS_KR,
+                           index=today_idx_auto if today_idx_auto < len(DAYS_KR) else 0)
     
-    # 주차 날짜 배열 확보(있으면 사용, 없으면 오늘부터 7일 fallback)
-    if "week_dates" in locals() and week_dates:
-        # 선택한 요일의 실제 날짜 문자열
+    # 실제 날짜 문자열(선택 주의 해당 요일 날짜 있으면 그걸, 아니면 오늘)
+    if week_dates:
         day_idx = DAYS_KR.index(sel_day)
         date_str = week_dates[day_idx].isoformat()
     else:
         date_str = today.isoformat()
     
-    # 자동 제안 블록(주차 메인/배경 없을 때 대비)
-    auto_items = []
-    if "default_blocks" in locals() and isinstance(default_blocks, dict):
-        auto_items = default_blocks.get(sel_day, [])
+    # 상세 플랜(있으면 우선) + 기본 블록 병합
+    detail = st.session_state.day_detail[selected_week_key][sel_day]
+    auto_items = default_blocks.get(sel_day, [])
     auto_main = [x for x in auto_items if not x.startswith("배경:")]
     auto_routine = [x for x in auto_items if x.startswith("배경:")]
     
-    # 상세 플랜 불러오기 (CSV 업로드로 들어온 값 포함)
-    detail_main = st.session_state.day_detail[selected_week_key][sel_day]["main"]
-    detail_routine = st.session_state.day_detail[selected_week_key][sel_day]["routine"]
+    final_main = detail["main"] if detail["main"] else auto_main
+    final_routine = detail["routine"] if detail["routine"] else auto_routine
     
-    # 최종 할 일: 상세가 우선, 없으면 자동 제안 사용
-    final_main = detail_main if detail_main else auto_main
-    final_routine = detail_routine if detail_routine else auto_routine
-    
-    # 체크 상태 저장소 준비 (주차 + 날짜 단위로 저장)
-    if "completed_by_day" not in st.session_state:
-        st.session_state.completed_by_day = {}  # dict[(week_key, date_str)] = set(labels)
-    
+    # 체크 상태 저장소(주차+날짜 단위)
     store_key = (selected_week_key, date_str)
     if store_key not in st.session_state.completed_by_day:
         st.session_state.completed_by_day[store_key] = set()
     completed = st.session_state.completed_by_day[store_key]
     
-    # 체크박스 렌더링 — [메인], [배경] 라벨 붙임
+    # 체크박스 그리기
     def _task_key(prefix, text):
         raw = f"{selected_week_key}|{date_str}|{prefix}|{text}"
         return "chk_" + hashlib.md5(raw.encode("utf-8")).hexdigest()
     
     today_tasks = []
     today_tasks += [("[메인]", t) for t in final_main]
-    # 배경은 "배경:" 접두어 제거 후 표시
     today_tasks += [("[배경]", t.replace("배경:", "").strip()) for t in final_routine]
     
     if not today_tasks:
@@ -1077,11 +1037,11 @@ else:
                 completed.discard(label)
     
         # 진행률
-        percent = int(len(completed) / len(today_tasks) * 100) if today_tasks else 0
+        percent = int(len(completed) / len(today_tasks) * 100)
         st.progress(percent)
         st.write(f"📊 오늘의 달성률: **{percent}%** ({len(completed)} / {len(today_tasks)})")
     
-    # 오늘 체크 내역 표/다운로드
+    # 내보내기
     with st.expander("📋 오늘 체크 내역 보기/내보내기"):
         rows = [{"날짜": date_str, "유형": kind, "할 일": text, "완료": (f"{kind} {text}" in completed)}
                 for kind, text in today_tasks]

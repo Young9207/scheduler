@@ -13,6 +13,13 @@ from collections import defaultdict
 STATE_FILE = Path("state_storage.json")
 STATE_KEYS = ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]
 
+def ensure_session_keys():
+    for key in ["weekly_plan", "day_detail", "completed_by_day", "weekly_review"]:
+        if key not in st.session_state:
+            st.session_state[key] = {}
+
+ensure_session_keys()
+
 
 def _parse_pipe_or_lines(s: str):
     if not s:
@@ -672,6 +679,8 @@ if "weeks" not in locals() or not isinstance(weeks, dict) or len(weeks) == 0:
 #--------테스트    
 current_week_label = find_current_week_label(weeks)
 
+if "weekly_plan" not in st.session_state:
+    st.session_state.weekly_plan = {}   # ✅ 추가
 
 if current_week_label:
     st.markdown(f"### 📅 이번 주: **{current_week_label}**")
